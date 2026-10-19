@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+runs/
+.DS_Store
+# Run outputs stay local; only the directory skeleton is tracked.
+results/*
+!results/raw/
+results/raw/*
+!results/raw/.gitkeep

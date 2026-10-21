@@ -713,3 +713,132 @@ tasks are near shortest-path). The schema itself is not decided here.
   first six columns and `build_log.json` byte-identical.
 - **Distribution.** Over the 1,473 rows: N 693 (47.0%), L 449 (30.5%),
   H 331 (22.5%). sql supplies 305 of the 331 PR:H.
+
+## 2026-10-21 — D14: Label-generation design for the cost-to-go estimator
+
+**Status.** Design only, not implemented. It will be implemented once the
+task schema is final (D12 is under revision). No states have been sampled
+and no labels exist.
+
+### 1. What a label is
+
+- **The label.** A label is the exact optimal cost-to-go h\*(s) of a sampled
+  state s of one instance, in D9 integer cost units.
+- **The solver.** It is computed by the exact solver, A\* with LM-cut. That
+  search is optimal because LM-cut is admissible (D7), the goal is tested on
+  expansion (D5) and states are reopened (D4).
+- **The cross-check.** Every label is also computed by the independent UCS
+  in `src/ahg/oracle.py` (CLAUDE.md §1 rule 6).
+  - The two must agree exactly; costs are integers (D9).
+  - A mismatch is a hard failure: the batch is aborted and nothing from it
+    is used.
+- **Infinite labels.** In a delete-free task whose goal is reachable from
+  the initial state, every reachable state can still reach the goal. An
+  infinite label is therefore a generation failure, logged separately and
+  never dropped (rule 10).
+- **Goal states** (h\* = 0) are kept, but counted separately in the batch
+  log.
+
+### 2. State sampling
+
+- **Order.** Splits are made at the topology level from disjoint seeds
+  before any state is sampled (rule 1). Sampling then happens per instance,
+  so a state's instance, and therefore its split, is fixed before the state
+  exists. States are never pooled or drawn across splits.
+- **Enumeration.** If an instance's reachable state space is at or below a
+  cap (set in the label config), every reachable state is labelled.
+- **Above the cap**, states are drawn, deduplicated per instance, from:
+  - **On-optimal:** every state along one optimal plan from the initial
+    state.
+  - **Off-optimal:** states from random rollouts. Each rollout applies
+    uniformly chosen applicable, useful actions from the initial state and
+    stops after a uniformly drawn number of steps.
+
+  Both kinds are needed. A\* evaluates h mostly off the optimal path, and a
+  learned heuristic trained only on optimal-path states would be fitted to
+  states it rarely meets.
+- **Sampling rng.** It is seeded on `"labels:family:seed"`, separate from
+  the topology, CVE and goal streams (D10, D12). So relabelling an instance
+  never changes the instance itself.
+- **Labels for every split.** Validation and test instances are labelled
+  too, because evaluation needs h\* for overestimation statistics and
+  suboptimality. They are written as separate batches tagged with their
+  split, and training code reads only `train` batches. A test asserts that
+  no topology seed occurs in two splits.
+
+### 3. Exact-solver size ceiling
+
+- **What sets it.** Labels need h\*, so training instance size is capped at
+  what the exact solver and the oracle both finish in reasonable time. The
+  oracle is uninformed UCS, so it will usually bind first.
+- **Measured so far.**
+  - Random tasks, not attack graphs (`docs/status_report.md` §3.4 and §6.4):
+    - UCS and A\*(h_max) exceeded 30 s at about 60 facts / 90 actions on
+      some seeds.
+    - A\*(LM-cut) stayed ≤ 0.4 s up to 80 facts / 120 actions.
+    - Brute-force enumeration is usable only to about 13–15 actions, so it
+      cross-checks small instances in tests only, not labels.
+  - D12 (v1) attack graphs: at n = 12, one instance had 13 facts, 89
+    actions and 1,894 reachable states, solved in milliseconds. That schema
+    is being revised, so this number does not carry over.
+- **How the ceiling will be set.** Empirically, on the final schema, before
+  any training run:
+  1. Time labelling (solver plus oracle) per instance across sizes.
+  2. Set the ceiling from a per-instance time budget recorded in the
+     config.
+  3. Record the measurement in `docs/experiment_log.md`.
+- **Larger instances.** Size-shift test instances above the ceiling get h\*
+  only where the solver finishes. Elsewhere they are reported per CLAUDE.md
+  §4, against the best-known cost and clearly labelled.
+
+### 4. Provenance and storage
+
+**Recommendation: `data/labels/<batch-id>/`, not `results/raw/`.**
+
+- Labels are inputs to training, generated deterministically from a config.
+  `results/raw/` holds run outputs that tables and figures are computed
+  from. Keeping the two apart means an aggregation script can never pick up
+  labels as results.
+- `data/*` is already gitignored (D11(e)), so label batches stay local like
+  the raw NVD snapshot.
+- Batches are **append-only**. A new config or commit means a new
+  `<batch-id>`, and an existing batch is never overwritten (rule 11, applied
+  to labels).
+
+Each batch directory holds:
+
+- **`manifest.json`:**
+  - batch id and UTC timestamp;
+  - git commit and dirty flag;
+  - a copy of the label config and its SHA-256;
+  - split name;
+  - the instance list (family, seed, n_hosts, generator parameters, schema
+    version);
+  - every rng seed and stream name;
+  - the SHA-256 of `data/derived/cves.csv` and the NVD snapshot date;
+  - solver and oracle identifiers;
+  - Python and library versions;
+  - hardware (platform, CPU, RAM);
+  - counts: states labelled, goal states, enumerated vs sampled, failures;
+  - per-instance labelling time.
+- **The labels:** one row per (instance, state) with:
+  - the instance id;
+  - the state bitmask;
+  - h\*;
+  - the sampling source (`enumeration`, `optimal_path` or `rollout`).
+- **A failures file:** unreachable goals and solver timeouts, kept apart
+  from the labels (rule 10).
+
+### 5. Train-only normalisation
+
+- **Fit on train only.** Any statistic fitted to data is fitted on the
+  train split only and applied unchanged to validation and test (rule 1).
+  This covers feature means and stds, label scaling, and any
+  outlier/clipping thresholds.
+- **Prefer fixed constants.** Where a fixed constant works, it is used
+  instead of a fitted statistic, and nothing then needs fitting. One example
+  is expressing costs in effort units via the D9 scale of 38.
+- **Stored with the checkpoint.** The fitted statistics are saved with the
+  model checkpoint and the train batch ids they came from.
+- **Separate decisions.** Validation is used for early stopping and tuning
+  only. Test batches are read only by the evaluation scripts.

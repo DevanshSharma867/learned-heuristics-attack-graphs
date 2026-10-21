@@ -17,6 +17,7 @@ Inclusion rule (D11):
 """
 
 import csv
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -38,7 +39,8 @@ FAMILY_PRODUCTS: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 WINDOW = (date(2016, 1, 1), date(2023, 12, 31))
 NVD_SOURCE = "nvd@nist.gov"
-CSV_FIELDS = ("cve_id", "family", "products", "cvss_version", "exploitability_score", "published")
+CSV_FIELDS = ("cve_id", "family", "products", "cvss_version", "exploitability_score", "published", "privileges_required")
+PR_VALUES = ("N", "L", "H")  # CVSS v3 Privileges Required: None, Low, High
 # Every outcome derive() can assign to a (CVE, family) pair, in rule order.
 OUTCOMES = (
     "included", "platform_only", "multi_family", "v3_cna_only", "v2_only", "v4_only",
@@ -54,10 +56,14 @@ class CveRecord:
     cvss_version: str  # "3.0" or "3.1"
     exploitability_score: float
     published: date
+    privileges_required: str  # "N", "L" or "H", from the same NVD Primary vector as the score
 
 
-def nvd_primary_v3(cve: dict) -> tuple[str, float] | None:
-    """(version, exploitabilityScore) of NVD's own v3.1 score, else its v3.0 score, else None.
+def nvd_primary_v3(cve: dict) -> tuple[str, float, str] | None:
+    """(version, exploitabilityScore, PR) of NVD's own v3.1 score, else its v3.0 score, else None.
+
+    PR is the Privileges Required component of the same metric's vector
+    string, so score and PR always come from one scoring.
 
     CNA scores (type "Secondary") are ignored. One CVE can carry both NVD's
     and the CNA's score, and D11 uses a single scorer, NVD.
@@ -66,8 +72,19 @@ def nvd_primary_v3(cve: dict) -> tuple[str, float] | None:
     for key, version in (("cvssMetricV31", "3.1"), ("cvssMetricV30", "3.0")):
         for m in metrics.get(key, []):
             if m.get("source") == NVD_SOURCE and m.get("type") == "Primary":
-                return version, float(m["exploitabilityScore"])
+                return version, float(m["exploitabilityScore"]), privileges_required(m)
     return None
+
+
+def privileges_required(metric: dict) -> str:
+    """PR component of a v3 metric's vectorString, cross-checked against cvssData.privilegesRequired."""
+    data = metric["cvssData"]
+    found = re.findall(r"/PR:([A-Z])(?=/|$)", data["vectorString"])
+    if len(found) != 1 or found[0] not in PR_VALUES:
+        raise ValueError(f"no single valid PR in vector {data['vectorString']!r}")
+    if data.get("privilegesRequired", "")[:1] != found[0]:  # NONE / LOW / HIGH
+        raise ValueError(f"vector PR:{found[0]} disagrees with privilegesRequired {data.get('privilegesRequired')!r}")
+    return found[0]
 
 
 def score_status(cve: dict) -> str:
@@ -150,8 +167,8 @@ def derive(matches) -> tuple[list[CveRecord], Counter]:
             if not WINDOW[0] <= published <= WINDOW[1]:
                 counts[family, "outside_window"] += 1
                 continue
-            version, score = nvd_primary_v3(cve)
-            records.append(CveRecord(cid, family, ";".join(sorted(vfams[family])), version, score, published))
+            version, score, pr = nvd_primary_v3(cve)
+            records.append(CveRecord(cid, family, ";".join(sorted(vfams[family])), version, score, published, pr))
             counts[family, "included"] += 1
     return sorted(records), counts
 
@@ -161,7 +178,8 @@ def write_table(records: list[CveRecord], path: Path) -> None:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(CSV_FIELDS)
         for r in records:
-            w.writerow([r.cve_id, r.family, r.products, r.cvss_version, f"{r.exploitability_score:.1f}", r.published.isoformat()])
+            w.writerow([r.cve_id, r.family, r.products, r.cvss_version, f"{r.exploitability_score:.1f}", r.published.isoformat(),
+                        r.privileges_required])
 
 
 def load_table(path: Path) -> list[CveRecord]:
@@ -171,6 +189,6 @@ def load_table(path: Path) -> list[CveRecord]:
         raise ValueError(f"unexpected columns in {path}: {tuple(rows[0])}")
     return [
         CveRecord(r["cve_id"], r["family"], r["products"], r["cvss_version"], float(r["exploitability_score"]),
-                  date.fromisoformat(r["published"]))
+                  date.fromisoformat(r["published"]), r["privileges_required"])
         for r in rows
     ]  # fmt: skip

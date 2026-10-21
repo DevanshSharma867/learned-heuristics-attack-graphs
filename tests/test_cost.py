@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from ahg.cost import K_MAX, K_MIN, SCALE, cost_units, exploitability_k
-from ahg.cve import load_table
+from ahg.cve import PR_VALUES, load_table
 
 TABLE = Path(__file__).resolve().parent.parent / "data" / "derived" / "cves.csv"
 
@@ -60,3 +60,9 @@ def test_every_derived_score_maps_to_integer_cost_in_range():
     for r in rows:
         c = cost_units(r.exploitability_score)
         assert isinstance(c, int) and 38 <= c <= 380, r
+
+
+def test_every_row_has_privileges_required():
+    rows = load_table(TABLE)
+    assert len(rows) == 1473
+    assert all(r.privileges_required in PR_VALUES for r in rows)

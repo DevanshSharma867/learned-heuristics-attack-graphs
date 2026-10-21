@@ -38,7 +38,7 @@ def labels(family, seed, n):
 
 
 def rec(cid, e):
-    return CveRecord(cid, "x", "v:p", "3.1", e, date(2019, 1, 1))
+    return CveRecord(cid, "x", "v:p", "3.1", e, date(2019, 1, 1), "N")
 
 
 def tiny_network(trust):

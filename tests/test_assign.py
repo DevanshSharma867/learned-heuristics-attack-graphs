@@ -14,7 +14,7 @@ TABLE = Path(__file__).resolve().parent.parent / "data" / "derived" / "cves.csv"
 
 # Synthetic pool: 10 CVEs per family, independent of the real table.
 POOL = [
-    CveRecord(f"CVE-2019-{fam}-{i:02d}", fam, "v:p", "3.1", 0.1 * (1 + i), date(2019, 1, 1))
+    CveRecord(f"CVE-2019-{fam}-{i:02d}", fam, "v:p", "3.1", 0.1 * (1 + i), date(2019, 1, 1), "N")
     for fam in SERVICE_FAMILIES
     for i in range(10)
 ]

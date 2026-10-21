@@ -575,3 +575,114 @@ A top-level `NOTICE` file will contain three things:
   page must be checked, because the text above comes from an archived 2017
   copy. This does **not** block building now: the repo stays private until
   the preprint.
+
+## 2026-10-21 — D12: Attack-graph schema (facts, actions, goal)
+
+**Decision.** `src/ahg/attack_graph.py` turns a network (D10) with one CVE per
+service (D11, `assign_cves`) into a delete-free `Task` (D1) as follows. The
+generator is native; MulVAL is not used to produce any dataset.
+
+**Facts.** One per host, with fact index = host id, so a state's bitmask is
+the set of hosts the attacker controls.
+
+| fact | meaning | MulVAL counterpart |
+|---|---|---|
+| `attackerLocated(internet)` (fact 0) | the attacker's start; the only initial fact | `attackerLocated(internet)` |
+| `execCode(h)`, h internal | the attacker can run code on host h | `execCode(h, Perm)` with a single `Perm` |
+
+**Actions.** All preconditions are conjunctive.
+
+- **exploit**: one per reach edge `Reach(src, s)`, where service s runs on
+  host h.
+  - pre `{fact(src)}`, add `{execCode(h)}`.
+  - cost `C = cost_units(E)` (D9), with E the exploitability of the CVE
+    assigned to s.
+- **login**: one per pair of a trust edge `Trust(t, h)` and a reach edge
+  `Reach(a, s)` to a login service s on h. Login services are `ssh`, `rdp`
+  and `smb`.
+  - pre `{execCode(t), fact(a)}`, i.e. credentials taken from t AND network
+    access to h's login service from a. It has a single precondition when
+    a = t.
+  - add `{execCode(h)}`.
+  - cost `LOGIN_COST = 38`, i.e. c = 1 effort unit.
+
+**Goal.** `execCode(target)`. The target is drawn uniformly among the hosts
+with the largest hop distance from the internet, using a separate rng stream
+`"goal:family:seed"` (next to D10's `"family:seed"` and the CVE stream
+`"cves:family:seed"`).
+
+**Correspondence to MulVAL** (Ou et al. 2005) `[VERIFY rule names against
+MulVAL's interaction_rules.P before citing them in the paper]`:
+
+- An exploit action is MulVAL's remote-exploit rule (`execCode` from
+  `netAccess` plus static `vulExists`/`networkServiceInfo` leaves), with
+  `netAccess` derived by the direct-access rule (src = internet) or the
+  multi-hop rule (src internal, static `hacl` leaf).
+- A login action is MulVAL's login chain: `execCode(h)` from
+  `principalCompromised` (credentials taken on t) AND `canAccessHost(h)`,
+  which comes from `logInService` plus `netAccess(h, …)` (from a).
+- Static MulVAL facts (`hacl`, `vulExists`, `networkServiceInfo`,
+  `hasAccount`, `logInService`) are compiled into which actions exist, the
+  usual grounding step in planning. They never change, so they carry no
+  state bit.
+- MulVAL's cost-free intermediate derived facts (`netAccess`,
+  `canAccessHost`, `principalCompromised`) are **folded into the actions
+  that consume them**. Each action therefore corresponds to one MulVAL
+  derivation path ending in `execCode`.
+
+**Why fold the intermediate facts.**
+
+- They have no CVE and no cost. As zero-cost actions they would create
+  zero-cost plateaus: every order of acquiring free facts is a distinct
+  state at the same g, which inflates node counts for every method alike
+  with search that no heuristic can steer.
+- Folding preserves reachability and optimal cost. The task is delete-free
+  and the folded steps are free, so every plan in one representation maps to
+  a plan of equal cost in the other.
+- Consequence for later MulVAL validation: compare, per instance, the set of
+  reachable `execCode` facts and the optimal cost, not graph isomorphism.
+
+**Why one privilege level.** `data/derived/cves.csv` holds only the
+exploitability sub-score (D11(e)), with no impact metrics, so there is no
+data to decide whether an exploit yields user or root. Two levels would add
+an unvalidated assumption.
+
+**Why login costs c = 1.** A login with valid credentials has no CVE, so the
+cost model (CLAUDE.md §1 rule 5) has no x_a for it. We take x = 1: the
+easiest possible action, the floor of the model's [1, 10] range. Zero was
+rejected because it would bring back zero-cost plateaus. This is the one
+cost not derived from CVSS, and it applies identically to every instance.
+
+**Reachability (CLAUDE.md §1 rule 10).**
+
+- Every internal host is reachable from the internet over reach edges (D10
+  repair edges). Every reach edge yields an exploit action. So by induction
+  along a BFS path, every `execCode(h)` is reachable, and every goal is
+  reachable by construction.
+- `build_task` still checks it: h_max is finite exactly when the goal is
+  reachable in a delete-free task. If the check fails, it raises
+  `UnreachableGoal`. Callers log that as a generation failure, separately,
+  and never drop it or count it as solved.
+
+**Consequence, measured 2026-10-21 at the D10 defaults (20 seeds per
+cell).** These tasks are close to shortest-path problems.
+
+- **Why.** An exploit has one precondition, so the only genuine
+  conjunctions are logins whose network access comes from a third host
+  (a ∉ {t, internet}).
+- **hub_and_spoke.** None can exist, by construction. Trust runs hub → own
+  spoke, and a spoke's services are reachable only from its hub or the
+  internet.
+- **Where the heuristics fell below h\*.** Counted over every non-goal
+  reachable state; at n = 5–6 hmax(init) < h\* in 1 instance in total, and
+  at n = 8 in 3 tiered instances out of 20:
+
+  | n | flat | tiered | hub_and_spoke |
+  |---|---|---|---|
+  | 5 | hmax: 2 of 205 states; lmcut: 0 | 0 of 190 | 0 of 167 |
+  | 6 | 0 of 378 | hmax: 1 of 268 | 0 of 263 |
+  | 8 | 0 of 1,602 | hmax: 16 of 871; lmcut: 8 | 0 of 926 |
+
+- **Implication.** On such tasks h_max and LM-cut are nearly perfect, so
+  H1 would be close to vacuous. This needs a decision before any dataset is
+  generated. It is recorded here, not worked around.

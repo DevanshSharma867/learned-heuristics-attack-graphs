@@ -2,12 +2,11 @@
 
 ## 0. What this project is (read first)
 
-Solo research project by Devansh Sharma (BITS Pilani Hyderabad, CS F407/U407 Artificial Intelligence, Research track, Search + Deep Learning). Two goals, in priority order:
+A research project on learned heuristics for A* search over vulnerability-derived attack graphs. **The product is a publishable paper** (workshop first, then conference/journal if results hold) with a reproducible code artifact to match. Every decision in this repo is made to that standard: if a choice is defensible in peer review, it's right; if it only makes sense as a shortcut to a deadline, it's wrong.
 
-1. **A publishable paper** (workshop first, then conference/journal if results hold).
-2. **The course submission** (report, reproducible code, live demo, individual viva, AI-usage disclosure).
+Treat the repo as a research artifact, not a coursework submission — code, experiments, and writing held to the bar a reviewer would apply, not a grader. (It does also satisfy a course requirement, but that follows automatically from doing the paper properly and never drives a decision.)
 
-Repo: https://github.com/DevanshSharma867/learned-heuristics-attack-graphs
+Author/maintainer: Devansh Sharma (solo). Repo: https://github.com/DevanshSharma867/learned-heuristics-attack-graphs
 
 **Research question.** Compared with A* using classical heuristics, can a neural cost-to-go estimator trained on some attack graphs reduce search effort on attack graphs from *unseen* network topologies, and how much solution quality does it cost?
 

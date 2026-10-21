@@ -160,3 +160,67 @@ commit time, not authoring time.
   - The derived counts (1,473 CVEs) match the independent measurement pass
     exactly.
   - The platform-only zeros were confirmed by recounting from the raw pages.
+
+## 2026-10-21 — Claude Code (Claude Opus 5.5)
+
+**Session: attack-graph generator (D12), PR column (D13), label design (D14).**
+
+- **D12 attack-graph generator.** This part of the session was not yet
+  logged. Claude Code wrote:
+  - `src/ahg/attack_graph.py`: network plus CVEs → delete-free `Task`.
+  - `src/ahg/oracle.py`: an independent UCS on frozenset states that
+    shares no code with `search.py`.
+  - `tests/test_attack_graph.py`.
+  - `scripts/gen_attack_graphs.py`.
+  - `hop_distances` extracted in `src/ahg/network.py`.
+- **The D12 measurement** found generated tasks are near shortest-path:
+  hmax and LM-cut equal h\* on almost every state, and hub_and_spoke has no
+  genuine AND structure. This is recorded in D12 as an open issue, not
+  worked around.
+- **D13: `privileges_required` column.**
+  - `src/ahg/cve.py` now reads the CVSS PR metric from the same NVD Primary
+    v3 vector as the exploitability score and cross-checks it against
+    `cvssData.privilegesRequired`. The column was appended to
+    `data/derived/cves.csv`.
+  - The table was regenerated from the existing 2026-10-21 snapshot. There
+    was no re-fetch.
+  - The test fixtures in `tests/test_cve.py`, `tests/test_cost.py`,
+    `tests/test_assign.py` and `tests/test_attack_graph.py` were updated.
+  - D13 was added to `docs/decisions.md` as a new entry, so D11(e) is not
+    edited.
+- **D14: label-generation design**, documented in `docs/decisions.md`. It
+  covers the label definition with a mandatory oracle cross-check, per-split
+  state sampling, the exact-solver size ceiling, provenance in
+  append-only `data/labels/<batch-id>/`, and train-only normalisation.
+  - **No implementation and no sampling were done.** No labels or datasets
+    exist.
+- **Not done.** Three attempts at a PR-gated generator variant were cut off
+  mid-response, and none reached the repo. No PR-gated schema exists, and
+  the D12 open issue stands.
+- **Files touched:**
+  - code: `src/ahg/attack_graph.py`, `src/ahg/oracle.py`,
+    `src/ahg/network.py`, `src/ahg/cve.py`;
+  - script: `scripts/gen_attack_graphs.py`;
+  - tests: `tests/test_attack_graph.py`, `tests/test_cve.py`,
+    `tests/test_cost.py`, `tests/test_assign.py`;
+  - data: `data/derived/cves.csv`;
+  - docs: `docs/decisions.md` (D12, D13, D14), `docs/ai_usage_log.md`.
+- **How verified.**
+  - `.venv/bin/python -m pytest -q` gave **805 passed** after D13. D14 is
+    docs only.
+  - **The D12 tests** run on generated graphs (3 families, 44 instances) and
+    check:
+    - h0 ≤ hsp ≤ hmax ≤ lmcut ≤ h\* and h\* ≤ hff ≤ hadd on every reachable
+      state;
+    - A\* with each admissible heuristic returns the optimal cost;
+    - the oracle agrees with `uniform_cost` on every state, and with brute
+      force on 30 small graphs;
+    - a hand-checked conjunctive login: h\* = 456 with the trust edge, 760
+      without it;
+    - every search method goes through the shared `best_first_search`.
+  - **The D13 tests and checks:**
+    - all 1,473 rows have PR ∈ {N, L, H};
+    - a vector/field mismatch is rejected;
+    - the first six CSV columns and `build_log.json` stayed byte-identical
+      after regeneration;
+    - a second derive run was byte-identical.

@@ -91,3 +91,72 @@ commit time, not authoring time.
     output.
 - **Known limitation.** At n ≈ 10, flat and tiered networks are not reliably
   distinguishable by structure. This is recorded in D10.
+
+## 2026-10-21 — Claude Code (Claude Opus 5.5)
+
+**Session 3: CVE data source, measurement, D11, and the build pipeline.**
+
+- **Data-source probe.**
+  - Made one NVD API request to test reachability. No API key is available,
+    so every later request was paced at one per 6.5 s with at most one
+    delayed retry.
+- **Measurement pass**, made before any feature code.
+  - Fetched full records per candidate product into a scratch directory
+    outside the repo. This was needed because "has an NVD Primary v3 score"
+    is not an API filter.
+  - Measured per-family and per-year counts.
+  - Resolved D9's min-rounding `[VERIFY]` from four real CVEs with vector
+    `AV:P/AC:H/PR:H/UI:R`: NVD reports 0.1 when scope is unchanged. The 0.2
+    seen with scope changed comes from the spec's scope-dependent PR weight,
+    not from rounding.
+  - D11 was then drafted from these counts and approved by the author, with
+    the author's own decisions on rdp, the `published` column and
+    product-held-out feasibility folded in.
+  - Errors found and corrected during the pass:
+    - two total counts were wrong in the first D11 draft;
+    - a zsh word-splitting bug briefly made two windows look identical;
+    - an analysis merge bug could overwrite an included row.
+- **Build pipeline.** Claude Code wrote:
+  - `src/ahg/cve.py`: the D11 product mapping and the inclusion and
+    exclusion rules as pure functions.
+  - `scripts/fetch_nvd.py`: a paced, resumable fetch that writes the
+    manifest with per-page SHA-256s and the git commit.
+  - `scripts/derive_cves.py`: refuses to run if a page fails its checksum;
+    writes `data/derived/cves.csv` and `build_log.json`, with every outcome
+    listed, zeros included.
+  - `src/ahg/cost.py`: D9's `C = 389 − 9k`, with `k = round(10E)` and an
+    explicit grid check.
+  - `src/ahg/assign.py`: seeded per-family CVE-to-service assignment. It
+    seeds on `"cves:family:seed"`, so it does not replay the topology
+    generator's own stream.
+  - `NOTICE`: NVD and MITRE attribution, quoted from the archived CVE Terms
+    of Use, with a `[VERIFY]` against the live pages before going public.
+- **Pinned snapshot.** The 2026-10-21 snapshot has 37 page files and 4,652
+  records; 6 requests needed their single retry.
+  - The manifest's git-dirty flag is true only because of untracked new
+    files. The code that ran matched commit `bcf91c8`. This is recorded as a
+    provenance note in the build log; the snapshot was not re-fetched.
+- **Files touched:**
+  - code: `src/ahg/cve.py`, `src/ahg/cost.py`, `src/ahg/assign.py`;
+  - scripts: `scripts/fetch_nvd.py`, `scripts/derive_cves.py`;
+  - tests: `tests/test_cve.py`, `tests/test_cost.py`,
+    `tests/test_assign.py`;
+  - data: `data/derived/cves.csv`, `data/derived/build_log.json`;
+  - docs and config: `NOTICE`, `.gitignore`, `docs/decisions.md` (the D9
+    resolution and D11), `docs/ai_usage_log.md`.
+- **How verified.**
+  - `.venv/bin/python -m pytest -q` gave **624 passed**.
+  - The tests include:
+    - the cost endpoints, and exact rational equality with
+      `c = 1 + 9(1 − x)` for every k from 1 to 39;
+    - the `round`-vs-`int` pitfall (`4.35 − 1.15`);
+    - a hand-checked real CVE: CVE-2016-10012, E = 1.8, k = 18, C = 227;
+    - every derived score maps to an integer C in [38, 380];
+    - the D11 rules on synthetic records;
+    - assignment determinism, pool-order independence and cross-family
+      decorrelation.
+  - The derive step was run twice with byte-identical outputs. It also
+    checks every page's SHA-256 against the manifest.
+  - The derived counts (1,473 CVEs) match the independent measurement pass
+    exactly.
+  - The platform-only zeros were confirmed by recounting from the raw pages.

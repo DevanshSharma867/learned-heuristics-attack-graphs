@@ -110,6 +110,22 @@ def host_links(net: Network) -> set[tuple[int, int]]:
     return {(r.src, net.services[r.service].host) for r in net.reach}
 
 
+def hop_distances(net: Network) -> dict[int, int]:
+    """BFS hop distance from the internet over host links; unreachable hosts are absent."""
+    out = {h.id: [] for h in net.hosts}
+    for a, b in host_links(net):
+        out[a].append(b)
+    dist = {INTERNET: 0}
+    queue = deque([INTERNET])
+    while queue:
+        a = queue.popleft()
+        for b in sorted(out[a]):
+            if b not in dist:
+                dist[b] = dist[a] + 1
+                queue.append(b)
+    return dist
+
+
 def structure_stats(net: Network) -> dict:
     """Cheap label-free structural statistics (ignore zones and meta).
 
@@ -121,17 +137,7 @@ def structure_stats(net: Network) -> dict:
       single highest-degree host (1.0 for a one-hub star).
     """
     links = host_links(net)
-    out = {h.id: [] for h in net.hosts}
-    for a, b in links:
-        out[a].append(b)
-    dist = {INTERNET: 0}
-    queue = deque([INTERNET])
-    while queue:
-        a = queue.popleft()
-        for b in sorted(out[a]):
-            if b not in dist:
-                dist[b] = dist[a] + 1
-                queue.append(b)
+    dist = hop_distances(net)
     pairs = {tuple(sorted(p)) for p in links if INTERNET not in p}
     degree = {h.id: 0 for h in net.hosts[1:]}
     for a, b in pairs:

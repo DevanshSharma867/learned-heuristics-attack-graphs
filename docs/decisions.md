@@ -343,3 +343,235 @@ very small graphs must be read with that in mind.
 - Python hashes string seeds with SHA-512, not `hash()`, so the result does
   not depend on `PYTHONHASHSEED`. This is checked by the cross-process
   determinism test at `tests/test_topology.py:25`.
+
+## 2026-10-21 — D11: CVE source, family mapping, window and storage
+
+**Status.** Approved 2026-10-21. The counts below come from a measurement
+fetch made on 2026-10-21, not from the pinned snapshot. The pinned snapshot
+is built by `scripts/fetch_nvd.py` and `scripts/derive_cves.py`, and its own
+counts are recorded in `data/derived/build_log.json`.
+
+### (a) Scorer rule: NVD Primary v3.x only
+
+- **Rule.** A CVE's exploitability `E` is the `exploitabilityScore` of its
+  `cvssMetricV31` entry with `source == "nvd@nist.gov"` and
+  `type == "Primary"`. If there is no such entry, the `cvssMetricV30` entry
+  with the same source and type is used. CNA scores (`type == "Secondary"`)
+  are never used.
+- **Why.**
+  - One CVE can carry several v3 scores from different scorers. For example,
+    CVE-2021-44228 has both NVD's and the CNA's.
+  - Using only NVD Primary means a single analyst process scored every `E`.
+    Mixing scorers would add scorer-dependent noise to `x_a`, and would let
+    the vulnerability-shift split partly measure a change of scorer instead
+    of a change of vulnerabilities.
+- **What it costs.** 966 unique CVEs that have only a CNA v3 score are
+  dropped (all years, all families). They are counted as `v3_cna_only`.
+
+### (b) Service family → product mapping
+
+**How products are selected.**
+
+- Each family is a set of `vendor:product` pairs, queried with
+  `virtualMatchString=cpe:2.3:*:<vendor>:<product>`.
+- A CVE belongs to a product only if one of its `cpeMatch` entries has
+  `vulnerable: true` and names that product. Matches where the product is
+  only the platform are excluded and counted as `platform_only` (48, all
+  years).
+
+**The mapping.** Counts are CVEs included in the window (c), per product.
+| family | product (CPE `cpe:2.3:*:` + …) | in window |
+|---|---|---|
+| dns | `isc:bind` | 72 |
+| dns | `nlnetlabs:unbound` | 22 |
+| dns | `powerdns:authoritative` | 17 |
+| dns | `powerdns:recursor` | 24 |
+| dns | `thekelleys:dnsmasq` | 28 |
+| ftp | `proftpd:proftpd` | 13 |
+| ftp | `pureftpd:pure-ftpd` | 6 |
+| ftp | `filezilla-project:filezilla_server` | 1 |
+| ftp | `solarwinds:serv-u` | 23 |
+| ftp | `wftpserver:wing_ftp_server` | 8 |
+| ftp | `crushftp:crushftp` | 8 |
+| ftp | `cerberusftp:ftp_server` | 5 |
+| ftp | `beasts:vsftpd` | 0 |
+| ftp | `xlightftpd:xlight_ftp_server` | 0 |
+| http | `apache:http_server` | 87 |
+| http | `apache:tomcat` | 83 |
+| http | `f5:nginx` | 20 |
+| http | `nginx:nginx` (pre-F5 vendor name) | 0 |
+| http | `microsoft:internet_information_services` | 1 |
+| mail | `microsoft:exchange_server` | 54 |
+| mail | `exim:exim` | 39 |
+| mail | `dovecot:dovecot` | 28 |
+| mail | `postfix:postfix` | 3 |
+| mail | `sendmail:sendmail` | 2 |
+| rdp | `freerdp:freerdp` | 89 |
+| rdp | `neutrinolabs:xrdp` | 17 |
+| smb | `samba:samba` | 107 |
+| sql | `oracle:mysql` | 516 |
+| sql | `mariadb:mariadb` | 200 |
+| sql | `postgresql:postgresql` | 70 |
+| sql | `microsoft:sql_server` | 13 |
+| sql | `mysql:mysql` (pre-Oracle vendor name) | 1 |
+| ssh | `openbsd:openssh` | 36 |
+| ssh | `libssh:libssh` | 12 |
+| ssh | `dropbear_ssh_project:dropbear_ssh` | 13 |
+
+**How the mapping was arrived at, for transparency.**
+
+- The FTP list originally had only the first four products and gave 25
+  CVEs over all years. Serv-U, Wing FTP, CrushFTP, Xlight and Cerberus were
+  added after that first measurement. No split exists yet, so this is not
+  test leakage, but the mapping was extended in response to the data.
+- `microsoft:remote_desktop_protocol` was tried and does not exist as a
+  CPE (0 results), so it was dropped.
+
+**Known weaknesses, kept on purpose and documented.**
+
+- **rdp: known modelling limitation.** rdp is kept, as FreeRDP plus xrdp.
+  - **Why it is imperfect.**
+    - Windows RDP-server CVEs (e.g. CVE-2019-0708) are filed under Windows
+      OS CPEs, so they cannot be isolated by CPE.
+    - FreeRDP CVEs are mostly client-side: a malicious server attacks the
+      client. That is the opposite direction to "attacker reaches an RDP
+      service".
+  - **Why that is acceptable.** The cost model consumes only the CVSS
+    exploitability sub-score, as an abstract attack-effort proxy (D9). It
+    does not model which way an exploit runs. So the rdp family works as a
+    labelled distribution of exploitability scores, which is all the
+    pipeline needs from it.
+  - **What the paper must not say.** It must not claim these are realistic
+    RDP-server scenarios. This belongs with the synthetic-topology threat to
+    validity.
+- **smb.** Samba only. Windows SMB has the same OS-CPE problem. With a
+  single product, a held-out-product shift is impossible inside smb.
+- **sql.** Dominated by `oracle:mysql` (516 of 668).
+
+**For later split design.**
+
+- A held-out-product vulnerability shift is only feasible within families
+  that have real product diversity: dns, ftp, http, mail and sql.
+- smb (Samba only) and rdp (FreeRDP plus xrdp, dominated by FreeRDP) cannot
+  support an intra-family held-out-product shift.
+
+**CVEs in more than one family.** Seven CVEs match two families over all
+years, and 2 of them are inside the window. They are excluded and counted
+as `multi_family`, so families stay disjoint for the vulnerability-shift
+split.
+
+### (c) Window and inclusion rule
+
+- **Inclusion.** A CVE is included if it is published from 2016-01-01 to
+  2023-12-31 inclusive, has an NVD Primary v3.0/v3.1 `exploitabilityScore`,
+  and is matched as vulnerable by exactly one family.
+- **Per-family counts in this window.**
+
+  | dns | ftp | http | mail | rdp | smb | sql | ssh | total |
+  |---|---|---|---|---|---|---|---|---|
+  | 158 | 62 | 189 | 125 | 106 | 107 | 668 | 58 | 1473 |
+
+  These counts are unique CVEs after removing the multi-family ones. The
+  per-product table in (b) is counted before that, so its rows can overlap.
+  Every family has at least 58, so none is under a few dozen.
+- **Spread of `E` values.** The number of distinct `E` values per family is
+  6–20. Over all families, 22 distinct values occur, and the mass is
+  concentrated at 3.9 (472) and 2.8 (310).
+- **Why this window.** It comes from the per-year share of matched CVEs
+  that carry an NVD Primary v3 score:
+
+  | year | ≤2015 | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | share | ≤0.05 | 0.89 | 0.95 | 1.00 | 1.00 | 0.79 | 0.43 | 0.55 | 0.55 | 0.32 | 0.22 | 0.39 |
+
+  - **Before 2016**, NVD scored almost only in v2 (43 back-filled v3
+    exceptions in total, which are dropped).
+  - **From 2024**, coverage falls further. The explanation is NVD's
+    analysis backlog and its shift toward relying on CNA scores. Those
+    records are also still being analysed, so a snapshot of them would be
+    unstable. We do not need the exact backlog start date: the window
+    boundary is set from the coverage drop and the instability.
+  - **What the window costs.** Extending to the snapshot date would add 38
+    dns, 22 ftp, 16 http, 39 mail, 103 rdp, 3 smb, 19 sql and 41 ssh. Most
+    of the rdp gain is FreeRDP (93 of 103).
+- **Coverage is uneven within the window too.** NVD scored fewer of the
+  2021–23 CVEs, and unevenly by vendor: `oracle:mysql` drops from 89
+  included in 2020 to 3 in 2021, while its CNA-only count rises from 50 to
+  121. So a vulnerability-shift split must not be defined by publication
+  year, or it would partly measure NVD's scoring coverage.
+- **Invisible CVEs.** CVEs that NVD never analysed have no CPE
+  configuration, so a CPE query never returns them. They are invisible, not
+  excluded. The exclusion counts in (d) are therefore a lower bound on what
+  the window misses.
+
+### (d) Exclusions, counted in the dataset log
+
+- **What each build records.** Each dataset build logs per-family counts for
+  every exclusion reason:
+  - `v2_only`: has a v2 score but no v3 score. 1,405 unique CVEs over all
+    years, before the window is applied.
+  - `v4_only`: has a v4 score but no v2 or v3 score. 0 among CPE-matched
+    records, because NVD-analysed records carry v3.
+  - `v3_cna_only`: has a v3 score from the CNA but none from NVD.
+  - `platform_only`: the product matched only as a platform, not as the
+    vulnerable component.
+  - `multi_family`: matched by more than one family.
+  - `outside_window`: published outside 2016–2023.
+- **Why it matters.** Excluded CVEs are never dropped silently. This mirrors
+  CLAUDE.md §1 rule 10 for data.
+
+### (e) Storage split
+
+- **Raw snapshot** goes in `data/raw/nvd/<snapshot-date>/`, outside git.
+  - It holds one gzipped API response per product query.
+  - `manifest.json` records:
+    - the exact query URL and parameters;
+    - `totalResults`;
+    - the UTC fetch timestamp;
+    - the SHA-256 of each file;
+    - the script's git commit.
+  - The fetch script uses smaller pages and one paced retry, because
+    2000-record pages were cut off mid-transfer during measurement.
+  - Experiments never touch the network (CLAUDE.md §3).
+- **Derived table, committed to git.** `data/derived/cves.csv` with columns:
+  - `cve_id`
+  - `family`
+  - `products`: every vendor:product matched as vulnerable within the
+    family, `;`-separated and sorted
+  - `cvss_version`: 3.0 or 3.1
+  - `exploitability_score`
+  - `published`: date only, YYYY-MM-DD
+
+  The `published` column lets the window be re-checked from the table
+  alone. It also lets us show that the vulnerability-shift split is not a
+  publication-year artefact.
+
+  It holds no descriptions, references, vectors or CNA-authored text. It is
+  generated by a script from the raw snapshot plus the manifest, and is
+  never hand-edited.
+- **Build log, committed to git.** `data/derived/build_log.json` records:
+  - the snapshot date;
+  - the manifest's SHA-256;
+  - the window;
+  - per-family included counts;
+  - per-family exclusion counts.
+- **Required `.gitignore` change.** The file currently ignores all of
+  `data/`. It would ignore `data/*` but keep `data/derived/`.
+
+### (f) NOTICE file
+
+A top-level `NOTICE` file will contain three things:
+
+1. The NVD non-endorsement notice, using the Terms of Use wording: *"This
+   product uses the NVD API but is not endorsed or certified by the NVD."*
+2. MITRE's CVE copyright designation and the licence text from the CVE
+   Terms of Use: perpetual, worldwide, non-exclusive, no-charge,
+   royalty-free, irrevocable copyright licence, on condition that the
+   copyright designation and licence are reproduced.
+3. A statement that `exploitability_score` values are NVD-generated (U.S.
+   Government work).
+
+- **`[VERIFY]` before the repo goes public.** The live cve.org Terms of Use
+  page must be checked, because the text above comes from an archived 2017
+  copy. This does **not** block building now: the repo stays private until
+  the preprint.

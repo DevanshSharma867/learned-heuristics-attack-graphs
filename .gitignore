@@ -2,7 +2,9 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-data/
+# Raw data stays local; the derived CVE table (D11) is tracked.
+data/*
+!data/derived/
 runs/
 .DS_Store
 # Run outputs stay local; only the directory skeleton is tracked.

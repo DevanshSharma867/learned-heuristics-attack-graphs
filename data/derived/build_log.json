@@ -2,64 +2,97 @@
  "counts": {
   "dns": {
    "included": 158,
+   "multi_family": 0,
+   "no_score": 0,
    "outside_window": 43,
+   "platform_only": 0,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 104,
-   "v3_cna_only": 59
+   "v3_cna_only": 59,
+   "v4_only": 0
   },
   "ftp": {
    "included": 62,
    "multi_family": 2,
+   "no_score": 0,
    "outside_window": 24,
+   "platform_only": 0,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 31,
-   "v3_cna_only": 40
+   "v3_cna_only": 40,
+   "v4_only": 0
   },
   "http": {
    "included": 189,
    "multi_family": 4,
+   "no_score": 0,
    "outside_window": 27,
    "platform_only": 25,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 404,
-   "v3_cna_only": 128
+   "v3_cna_only": 128,
+   "v4_only": 0
   },
   "mail": {
    "included": 125,
    "multi_family": 4,
+   "no_score": 0,
    "outside_window": 44,
    "platform_only": 13,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 143,
-   "v3_cna_only": 124
+   "v3_cna_only": 124,
+   "v4_only": 0
   },
   "rdp": {
    "included": 106,
+   "multi_family": 0,
+   "no_score": 0,
    "outside_window": 103,
+   "platform_only": 0,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 2,
-   "v3_cna_only": 69
+   "v3_cna_only": 69,
+   "v4_only": 0
   },
   "smb": {
    "included": 107,
+   "multi_family": 0,
+   "no_score": 0,
    "outside_window": 10,
+   "platform_only": 0,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 90,
-   "v3_cna_only": 9
+   "v3_cna_only": 9,
+   "v4_only": 0
   },
   "sql": {
    "included": 668,
    "multi_family": 3,
+   "no_score": 0,
    "outside_window": 25,
    "platform_only": 10,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 550,
-   "v3_cna_only": 509
+   "v3_cna_only": 509,
+   "v4_only": 0
   },
   "ssh": {
    "included": 58,
    "multi_family": 1,
+   "no_score": 0,
    "outside_window": 45,
+   "platform_only": 0,
+   "v2_and_v4_no_v3": 0,
    "v2_only": 77,
-   "v3_cna_only": 28
+   "v3_cna_only": 28,
+   "v4_only": 0
   }
  },
  "decision": "D11",
  "fetch_git_commit": "bcf91c8d02b292f2e4b95170ed703d2737f7655f",
  "manifest_sha256": "0e5a3b6208a6b9a6f554d2234f1acbf7474f141fa1d16f5d989ea25578cb387e",
+ "provenance_note": "The manifest's git_dirty_src_or_scripts flag is true only because new untracked files (scripts/derive_cves.py, src/ahg/cost.py, src/ahg/assign.py) existed under scripts/ and src/ during the fetch. The code that ran (scripts/fetch_nvd.py, src/ahg/cve.py) was byte-identical to the recorded commit bcf91c8 (empty git diff), so the snapshot's provenance is clean.",
  "rows": 1473,
  "snapshot_date": "2026-10-21",
  "window": [

@@ -12,12 +12,24 @@ import gzip
 import hashlib
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
 
-from ahg.cve import WINDOW, derive, write_table
+from ahg.cve import OUTCOMES, WINDOW, derive, write_table
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Provenance annotations for specific snapshots. The manifest is final raw
+# data and is never edited, so facts learned about a snapshot after it was
+# written are recorded here and copied into the build log.
+PROVENANCE_NOTES = {
+    "2026-10-21": (
+        "The manifest's git_dirty_src_or_scripts flag is true only because new untracked files "
+        "(scripts/derive_cves.py, src/ahg/cost.py, src/ahg/assign.py) existed under scripts/ and src/ during the fetch. "
+        "The code that ran (scripts/fetch_nvd.py, src/ahg/cve.py) was byte-identical to the recorded commit bcf91c8 "
+        "(empty git diff), so the snapshot's provenance is clean."
+    ),
+}
+
 snapshots = ROOT / "data" / "raw" / "nvd"
 snap = snapshots / sys.argv[1] if len(sys.argv) > 1 else max(p for p in snapshots.iterdir() if (p / "manifest.json").exists())
 manifest_bytes = (snap / "manifest.json").read_bytes()
@@ -37,9 +49,8 @@ out = ROOT / "data" / "derived"
 out.mkdir(parents=True, exist_ok=True)
 write_table(records, out / "cves.csv")
 
-per_family: dict[str, dict[str, int]] = defaultdict(dict)
-for (family, reason), n in counts.items():
-    per_family[family][reason] = n
+# Every outcome is listed for every family, so a 0 is an explicit zero, not an omission.
+per_family = {fam: {o: counts[fam, o] for o in OUTCOMES} for fam in sorted({f for f, _ in counts})}
 log = {
     "decision": "D11",
     "snapshot_date": manifest["snapshot_date"],
@@ -47,6 +58,7 @@ log = {
     "fetch_git_commit": manifest["git_commit"],
     "window": [WINDOW[0].isoformat(), WINDOW[1].isoformat()],
     "rows": len(records),
+    "provenance_note": PROVENANCE_NOTES.get(manifest["snapshot_date"]),
     "counts": per_family,  # family -> reason -> CVEs; "included" + one exclusion reason per (CVE, family)
 }
 (out / "build_log.json").write_text(json.dumps(log, indent=1, sort_keys=True) + "\n")

@@ -1,6 +1,6 @@
 from datetime import date
 
-from ahg.cve import FAMILY_PRODUCTS, derive, nvd_primary_v3, score_status
+from ahg.cve import FAMILY_PRODUCTS, OUTCOMES, derive, nvd_primary_v3, score_status
 from ahg.network import SERVICE_FAMILIES
 
 
@@ -59,3 +59,4 @@ def test_derive_rules_and_counts():
         ("ssh", "multi_family"): 1, ("smb", "multi_family"): 1, ("ssh", "v2_only"): 1,
         ("ssh", "outside_window"): 2,
     }  # fmt: skip
+    assert {reason for _, reason in counts} <= set(OUTCOMES)  # build log lists every OUTCOME, zeros included

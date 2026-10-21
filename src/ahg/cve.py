@@ -39,6 +39,11 @@ FAMILY_PRODUCTS: dict[str, tuple[str, ...]] = {
 WINDOW = (date(2016, 1, 1), date(2023, 12, 31))
 NVD_SOURCE = "nvd@nist.gov"
 CSV_FIELDS = ("cve_id", "family", "products", "cvss_version", "exploitability_score", "published")
+# Every outcome derive() can assign to a (CVE, family) pair, in rule order.
+OUTCOMES = (
+    "included", "platform_only", "multi_family", "v3_cna_only", "v2_only", "v4_only",
+    "v2_and_v4_no_v3", "no_score", "outside_window",
+)  # fmt: skip
 
 
 @dataclass(frozen=True, order=True)

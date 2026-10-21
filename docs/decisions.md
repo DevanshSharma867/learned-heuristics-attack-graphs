@@ -122,3 +122,92 @@ twice and could exceed h*.
 h_sp is the weakest admissible baseline (always ≤ h_max). It is included
 because it is the "attack graph as a plain graph" view that the proposal
 compares against.
+
+## 2026-10-19 — D9: Exact integer encoding of the frozen cost model
+
+**Status.** Decided; not yet implemented. No code computes costs from CVSS yet.
+
+**What does NOT change.** The attack-effort model in CLAUDE.md §1 rule 5 is
+unchanged: `c(a) = 1 + 9·(1 − x_a)`, where `x_a ∈ [0,1]` is the normalised CVSS
+exploitability sub-score. It is an effort proxy, not a probability. This entry
+does two things:
+
+1. It fixes the normalisation of `x_a`, which rule 5 left open.
+2. It chooses an exact numeric encoding of `c(a)`.
+
+Multiplying every cost by the same positive constant changes no optimal plan,
+no ratio we report (plan cost / optimal cost), and no A* expansion order,
+provided the heuristics are scaled the same way. The classical heuristics are
+computed from the same encoded costs, so they scale automatically.
+
+### Normalisation of x_a
+
+- **Source.** The CVSS **v3.x** base-metric exploitability sub-score `E`, as
+  stored in the pinned NVD snapshot.
+  - Use v3.1 if the record has it, otherwise v3.0. Both use the identical
+    formula `8.22 × AV × AC × PR × UI`. The v3.1 revision changed scoring
+    guidance and some metric wording, not this computation. (Resolved; was
+    `[VERIFY]`.)
+  - CVEs with only v2 or only v4 metrics are **excluded** and counted in the
+    dataset log. v2's sub-score has a different range, and v4 has no
+    exploitability sub-score, so mixing versions would silently change the
+    distribution of x_a.
+- **Grid.** NVD reports `E` to one decimal place. The integer `k = round(10·E)` is
+  therefore exact. It must be computed with `round`, not `int()`, because
+  `10·E` is not exact in floating point. Assert `|10·E − k| < 1e-9`.
+- **Anchors, fixed from the spec, not from data.**
+  - The raw maximum is 8.22·0.85·0.77·0.85·0.85 = 3.887, which reports as 3.9.
+  - The raw minimum is 8.22·0.2·0.44·0.27·0.62 = 0.121, which reports as 0.1,
+    or 0.2 if NVD rounds up `[VERIFY rounding rule]`. This will be confirmed
+    against a real NVD record when `cost.py` is built. Option B is unaffected
+    either way, because the anchors come from the spec, not from the data.
+  - Either way, every reported `E` lies in [0.1, 3.9]. We fix `E_lo = 0.1` and
+    `E_hi = 3.9`, i.e. `k ∈ [1, 39]`.
+  - Computing the anchors from the observed CVE set is **rejected**. It would
+    make the cost model depend on the data, including test-split CVEs (rule 1),
+    and on the snapshot date.
+- **Formula.** `x_a = (k − 1) / 38`. This gives `x_a ∈ [0, 1]` exactly:
+  `k = 39` (easiest to exploit) gives `x = 1`, and `k = 1` gives `x = 0`.
+
+### Encoding
+
+- **Unit.** One cost unit is 1/38 of an effort unit. The stored cost is
+  `C(a) = 38·c(a) = 38 + 9·(39 − k) = 389 − 9k`, which is an integer.
+- **Range.** `C ∈ [38, 380]`, which corresponds to `c ∈ [1, 10]` exactly. Each
+  step of 0.1 in `E` changes `C` by 9. Under round-to-nearest, 26 distinct `k`
+  values are reachable from the v3.x metric combinations.
+- **Reporting.** Costs are shown in effort units, `C / 38`, only at reporting
+  time. Ratios are unit-free and unaffected.
+
+### Why
+
+- **Exactness.**
+  - LM-cut subtracts costs and tests `costs[ai] == 0` and `m > 0`
+    (`src/ahg/heuristics.py:170`, `:202`, `:205`).
+  - Search compares path costs with `g2 >= g_best[s2]` (`src/ahg/search.py:75`)
+    and drops stale entries with `g > g_best[s]` (`src/ahg/search.py:63`).
+  - Label checks compare costs with `==` (`tests/test_core.py:35-40`).
+
+  With real-valued costs, floating-point residue can make these comparisons
+  wrong: a zero-cost action may look non-zero, two equal paths may be treated
+  as different, or a label check may fail. With integers, all of them are
+  exact, and they are the setting the current tests already verify.
+- **Faithful normalisation.** Min-max on spec anchors uses the whole of
+  `[0, 1]` and therefore the whole cost range `[1, 10]`, which is what rule 5
+  states.
+- **Rejected alternatives.**
+  - (a) `x = E/3.9` with unit 1/39 is also exact, but `x` can never reach 0, so
+    `c ≤ 9.77`.
+  - (b) Floats plus an epsilon in comparisons: the tolerance is arbitrary and
+    becomes a source of silent bugs.
+  - (c) `fractions.Fraction` costs: exact, but much slower in the search's hot
+    loop, and the same exactness is available more cheaply with integers.
+
+### Consequences
+
+- `Action.cost` is already annotated `int` (`src/ahg/task.py:24`), so no type
+  change is needed.
+- Learned heuristics may return floats. Only the priority `f` mixes int and
+  float. `g` and every label stay integers.
+- The toy network and the random test tasks already use integer costs, so they
+  are unaffected. They are not in the CVSS range, and they don't need to be.

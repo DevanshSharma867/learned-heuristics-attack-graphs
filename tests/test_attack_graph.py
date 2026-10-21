@@ -22,18 +22,41 @@ POOL = load_table(Path(__file__).resolve().parent.parent / "data" / "derived" / 
 FAMILIES = ("flat", "tiered", "hub_and_spoke")
 # Generated instances the label/heuristic checks run on. Tiered n = 8 is
 # included because it is where hmax and LM-cut fall below h* (D12).
-CASES = [(f, s, 6) for f in FAMILIES for s in range(8)] + [("tiered", s, 8) for s in range(20)]
+BASE_CASES = [(f, s, 6) for f in FAMILIES for s in range(8)] + [("tiered", s, 8) for s in range(20)]
 
 
 @cache
-def inst(family, seed, n):
-    return make_instance(family, seed, n, POOL)
+def inst(family, seed, n, pr_gated=False):
+    return make_instance(family, seed, n, POOL, pr_gated=pr_gated)
+
+
+def reachable_seeds(family, n, k, pr_gated=True):
+    """The first k seeds whose goal is reachable, and the seeds skipped on the way.
+
+    The PR-gated variant can leave the goal unreachable (no PR:N way in).
+    Those seeds are generation failures, checked in
+    test_pr_gated_skipped_seeds_are_unreachable, not silently dropped.
+    """
+    ok, skipped, seed = [], [], 0
+    while len(ok) < k:
+        try:
+            inst(family, seed, n, pr_gated)
+            ok.append(seed)
+        except UnreachableGoal:
+            skipped.append(seed)
+        seed += 1
+    return ok, skipped
+
+
+PR_SEEDS = {(f, n): reachable_seeds(f, n, k) for f, n, k in [(f, 6, 8) for f in FAMILIES] + [("tiered", 8, 20)]}
+PR_CASES = [(f, s, n, True) for (f, n), (ok, _) in PR_SEEDS.items() for s in ok]
+CASES = [(*c, False) for c in BASE_CASES] + PR_CASES
 
 
 @cache
-def labels(family, seed, n):
+def labels(family, seed, n, pr_gated=False):
     """h* of every reachable state, from the independent oracle."""
-    t = inst(family, seed, n).task
+    t = inst(family, seed, n, pr_gated).task
     return {s: optimal_cost(t, s) for s in reachable_states(t)}
 
 
@@ -126,6 +149,53 @@ def test_login_is_conjunctive_hand_checked():
     assert optimal_cost(build_task(tiny_network(()), cves, target=2)) == 760
 
 
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("seed", range(3))
+def test_pr_gated_schema(family, seed):
+    """Each exploit gains exactly the capability its CVE's PR asks for; nothing else changes."""
+    i = inst(family, seed, 8)
+    try:
+        g = inst(family, seed, 8, True)
+    except UnreachableGoal:
+        pytest.skip("goal unreachable under PR gating (covered by the skipped-seeds test)")
+    n = len(i.network.hosts)
+    gate = {"N": (), "L": (n,), "H": (n + 1,)}
+    base, var = i.task, g.task
+    assert var.facts == base.facts + ["capability(user)", "capability(admin)"]
+    assert (var.init, var.goal) == (base.init, base.goal)
+    k = len(i.network.reach)
+    assert [(a.pre, a.add, a.cost) for a in var.actions[:k]] == [
+        (a.pre + gate[i.cves[r.service].privileges_required], a.add, a.cost)
+        for a, r in zip(base.actions[:k], i.network.reach)
+    ]
+    logins = [a for a in base.actions if a.name.startswith("login")]
+    assert var.actions[k:k + len(logins)] == logins
+    harvest = var.actions[k + len(logins):]
+    admins = sorted({t.src for t in i.network.trust})
+    assert [(a.pre, a.add) for a in harvest] == (
+        [((h,), (n,)) for h in range(1, n)] + [((t,), (n, n + 1)) for t in admins])
+    assert all(a.cost == LOGIN_COST for a in harvest)
+
+
+def test_pr_gated_skipped_seeds_are_unreachable():
+    """Seeds left out of PR_CASES fail as UnreachableGoal, and are reachable without gating."""
+    skipped = [(f, s, n) for (f, n), (_, sk) in PR_SEEDS.items() for s in sk]
+    for f, s, n in skipped:
+        with pytest.raises(UnreachableGoal):
+            make_instance(f, s, n, POOL, pr_gated=True)
+        assert optimal_cost(inst(f, s, n).task) < INF
+
+
+def test_pr_gating_is_not_vacuous():
+    """The variant must contain both L- and H-gated exploits on the cases above."""
+    gated = {"L": 0, "H": 0}
+    for f, s, n, _ in PR_CASES:
+        t = inst(f, s, n, True).task
+        gated["L"] += sum(len(t.facts) - 2 in a.pre for a in t.actions if a.name.startswith("exploit"))
+        gated["H"] += sum(len(t.facts) - 1 in a.pre for a in t.actions if a.name.startswith("exploit"))
+    assert gated["L"] > 0 and gated["H"] > 0, gated
+
+
 # --- independent oracle -----------------------------------------------------------
 
 
@@ -136,10 +206,16 @@ def test_oracle_agrees_with_search_on_every_state(case):
         assert uniform_cost(t, start=s).cost == hstar
 
 
+@pytest.mark.parametrize("pr_gated", [False, True])
 @pytest.mark.parametrize("family", FAMILIES)
 @pytest.mark.parametrize("seed", range(10))
-def test_oracle_agrees_with_brute_force_on_small_graphs(family, seed):
-    t = make_instance(family, seed, 4, POOL).task
+def test_oracle_agrees_with_brute_force_on_small_graphs(family, seed, pr_gated):
+    try:
+        # The variant's harvest actions push some n = 4 graphs past the brute-force limit.
+        t = make_instance(family, seed, 3 if pr_gated else 4, POOL, pr_gated=pr_gated).task
+    except UnreachableGoal:
+        assert pr_gated  # only the variant may fail to reach the goal
+        return
     assert len(t.actions) <= 16, "graph too big for brute force; shrink n"
     assert optimal_cost(t) == uniform_cost(t).cost == brute_force_optimal(t)
 

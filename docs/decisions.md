@@ -211,3 +211,118 @@ computed from the same encoded costs, so they scale automatically.
   float. `g` and every label stay integers.
 - The toy network and the random test tasks already use integer costs, so they
   are unaffected. They are not in the CVSS range, and they don't need to be.
+
+## 2026-10-21 — D10: Topology family definitions and default distribution
+
+**Decision.** The three topology families are defined by the structural rules
+below. Their default parameters, listed with each family, **are the training
+distribution**. Every shift split (size, structure, vulnerability; CLAUDE.md
+§3) is defined relative to these defaults: a shift changes one factor and
+keeps the rest at the values recorded here. Changing a default later is a
+change to the training distribution and needs a new entry.
+
+`n_hosts` has no default; the training size range is not fixed yet.
+
+**Rules shared by all families** (`src/ahg/topology.py`):
+
+- **Hosts and services.**
+  - Host 0 is the internet: it is the attacker's start and runs no
+    services (`src/ahg/network.py:25`).
+  - Each internal host runs k services with distinct families from
+    `SERVICE_FAMILIES` (`src/ahg/network.py:26`), where
+    k ~ U[services[0], services[1]] (`src/ahg/topology.py:50-53`).
+  - Default `services = (1, 3)` for every family.
+- **Links.** A link from host a to host b allows each of b's services
+  independently with the family's link probability.
+- **Trust.** Trust edges are drawn per allowed pair with probability
+  `p_trust` (`src/ahg/topology.py:66`).
+- **Repair edges.**
+  - If the internet reaches nothing, one service of an allowed host is
+    exposed (`src/ahg/topology.py:83`).
+  - Then edges are added until every host is reachable from the internet,
+    each from a reached host the family allows (`src/ahg/topology.py:89`).
+  - Without this, some hosts would be dead weight no attack can touch.
+
+### flat (`src/ahg/topology.py:135-159`)
+
+- **Rules.**
+  - One LAN zone.
+  - The internet may reach any host.
+  - Any internal host may reach and trust any other (`:149-155`).
+  - Repair edges come from any other LAN host (`:156-157`).
+- **Tests.** The single-zone rule is checked in `tests/test_topology.py:79`.
+- **Defaults.**
+  - `p_exposed = 0.2`: per service, internet → host.
+  - `p_reach = 0.3`: per service, host → host.
+  - `p_trust = 0.05`: per ordered host pair.
+
+### tiered (`src/ahg/topology.py:162-202`)
+
+- **Rules.**
+  - Hosts are split as evenly as possible into a DMZ plus `n_tiers − 1`
+    deeper tiers (`:178-181`).
+  - Only DMZ hosts are exposed to the internet (`:183-184`).
+  - Reach and trust edges stay inside a tier or go exactly one tier deeper.
+    They never skip a tier and never go upward (`:185-194`).
+  - Repair edges come only from the tier directly above (`:197`), so depth
+    ≥ `n_tiers`.
+- **Tests.** All of the above are checked in `tests/test_topology.py:86`.
+- **Defaults.**
+  - `n_tiers = 3`.
+  - `p_exposed = 0.5`: per service, internet → DMZ.
+  - `p_intra = 0.3`: per service, within a tier.
+  - `p_down = 0.2`: per service, tier t → t+1.
+  - `p_trust = 0.05`: per allowed ordered pair.
+
+### hub_and_spoke (`src/ahg/topology.py:205-244`)
+
+- **Rules.**
+  - Hubs come first; spokes are assigned to hubs round-robin (`:225`).
+  - Only spokes are exposed to the internet (`:227`).
+  - A spoke links only to and from its own hub (`:228-229`).
+  - Hubs link to each other (`:231-234`).
+  - Trust runs only from a hub to its own spokes, i.e. central
+    administration (`:230`).
+  - If the internet reaches no spoke, one spoke is exposed (`:235`).
+  - Repair edges follow the same rules (`:237-242`).
+- **Tests.** All of the above are checked in `tests/test_topology.py:101`.
+- **Defaults.**
+  - `n_hubs = 1`.
+  - `p_exposed = 0.2`: per service, internet → spoke.
+  - `p_link = 0.5`: per service, on spoke ↔ hub and hub ↔ hub links.
+  - `p_trust = 0.3`: per hub → own-spoke pair.
+
+### Structural distinguishability
+
+At the defaults, a classifier that sees no zone labels and no metadata
+recovers the family for 50/50 seeds at n = 30 and n = 60
+(`tests/test_topology.py:116-130`). Its rules:
+
+- hub_and_spoke if every internal link touches the top-degree host;
+- otherwise tiered if ≥ 20% of hosts are ≥ 3 hops from the internet;
+- otherwise flat.
+
+At n ≈ 10, a sparse flat network can look like a chain, so the families are
+**not** reliably distinguishable at that size. Structure-shift results on
+very small graphs must be read with that in mind.
+
+### Seeding on "family:seed"
+
+**Decision.** Each generator draws all of its randomness from
+`random.Random(f"{family}:{seed}")` (`src/ahg/topology.py:121-126`, used at
+`:147`, `:176`, `:222`).
+
+**Why.**
+
+- The first version seeded on `seed` alone. Every family draws services
+  first, so the same seed gave the same service assignment in every family:
+  at seed 0, `lan-1`, `dmz-1` and `hub-1` all ran `[dns, sql]`.
+- In the H3b structure-shift test, a held-out-family test graph and a
+  training graph with the same seed number would then share their service
+  (and later CVE) draws. That is a cross-family correlation that could
+  inflate apparent generalisation.
+- Seeding on the family string removes it. This is checked in
+  `tests/test_topology.py:38`.
+- Python hashes string seeds with SHA-512, not `hash()`, so the result does
+  not depend on `PYTHONHASHSEED`. This is checked by the cross-process
+  determinism test at `tests/test_topology.py:25`.

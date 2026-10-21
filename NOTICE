@@ -1,0 +1,55 @@
+NOTICE
+
+This repository includes a derived table of CVE data (data/derived/cves.csv),
+built from the U.S. National Vulnerability Database (NVD) by
+scripts/fetch_nvd.py and scripts/derive_cves.py (see docs/decisions.md, D11).
+The table contains only CVE identifiers, a service-family label, matched
+product names, the CVSS version, the CVSS v3.x exploitability sub-score and
+the publication date. It contains no CVE descriptions or references.
+
+
+1. National Vulnerability Database (NVD)
+
+This product uses the NVD API but is not endorsed or certified by the NVD.
+
+The exploitability_score values in data/derived/cves.csv are NVD-generated
+CVSS v3.x scores (NVD "Primary" scores, source nvd@nist.gov), i.e. works of
+the U.S. Government.
+
+
+2. Common Vulnerabilities and Exposures (CVE)
+
+Copyright © 1999–2021, The MITRE Corporation. CVE is a registered trademark
+and the CVE logo is a trademark of The MITRE Corporation.
+
+CVE Usage: MITRE hereby grants you a perpetual, worldwide, non-exclusive,
+no-charge, royalty-free, irrevocable copyright license to reproduce, prepare
+derivative works of, publicly display, publicly perform, sublicense, and
+distribute Common Vulnerabilities and Exposures (CVE™). Any copy you make for
+such purposes is authorized provided that you reproduce MITRE's copyright
+designation and this license in any such copy.
+
+DISCLAIMERS: ALL DOCUMENTS AND THE INFORMATION CONTAINED THEREIN PROVIDED BY
+MITRE ARE PROVIDED ON AN "AS IS" BASIS AND THE CONTRIBUTOR, THE ORGANIZATION
+HE/SHE REPRESENTS OR IS SPONSORED BY (IF ANY), THE MITRE CORPORATION, ITS
+BOARD OF TRUSTEES, OFFICERS, AGENTS, AND EMPLOYEES, DISCLAIM ALL WARRANTIES,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF
+THE INFORMATION THEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+
+[VERIFY before this repository is made public]
+- Section 2's license, disclaimer and copyright designation are quoted
+  verbatim from the archived CVE Terms of Use
+  (https://www.cve.org/Resources/Media/Archives/OldWebsite/about/termsofuse.html,
+  "Page Last Updated or Reviewed: December 15, 2017"; copyright line from
+  that page's footer, which reads 1999–2021). The live page
+  (https://www.cve.org/Legal/TermsOfUse) renders client-side and could not be
+  read when this file was written (2026-10-21). Confirm the current license
+  text and copyright years there and update this file.
+- The NVD notice in section 1 uses the NVD Terms of Use wording as recorded
+  by third-party license mirrors; the live NVD page
+  (https://nvd.nist.gov/developers/terms-of-use) also renders client-side.
+  Confirm the exact current wording there.
+These checks do not block development: the repository stays private until
+the preprint.

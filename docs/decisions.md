@@ -686,3 +686,30 @@ cell).** These tasks are close to shortest-path problems.
 - **Implication.** On such tasks h_max and LM-cut are nearly perfect, so
   H1 would be close to vacuous. This needs a decision before any dataset is
   generated. It is recorded here, not worked around.
+
+## 2026-10-21 — D13: `privileges_required` column in the derived CVE table
+
+**Decision.** `data/derived/cves.csv` gains a seventh column,
+`privileges_required` (`N`, `L` or `H`). This amends the column list in
+D11(e); every other part of D11 stands.
+
+**Why.** It is the data needed to give exploits PR-gated conjunctive
+preconditions in the attack-graph schema: network reachability AND a prior
+privilege for PR:L/H exploits (follow-up to the D12 finding that generated
+tasks are near shortest-path). The schema itself is not decided here.
+
+**How.**
+
+- **Source.** The CVSS Privileges Required (PR) metric, read by
+  `scripts/derive_cves.py` from the existing 2026-10-21 snapshot, with no
+  re-fetch.
+- **Same scoring as the score.** PR comes from the same NVD Primary v3.x
+  metric as `exploitability_score`, i.e. the same `vectorString` under the
+  D11(a) scorer rule. Score and PR therefore always come from one scoring.
+- **Cross-check.** The vector's PR is checked against that metric's
+  `cvssData.privilegesRequired` field, and a mismatch is an error. None
+  occurred.
+- **Determinism.** The column is appended last. Regenerating leaves the
+  first six columns and `build_log.json` byte-identical.
+- **Distribution.** Over the 1,473 rows: N 693 (47.0%), L 449 (30.5%),
+  H 331 (22.5%). sql supplies 305 of the 331 PR:H.

@@ -161,6 +161,23 @@ computed from the same encoded costs, so they scale automatically.
     or 0.2 if NVD rounds up `[VERIFY rounding rule]`. This will be confirmed
     against a real NVD record when `cost.py` is built. Option B is unaffected
     either way, because the anchors come from the spec, not from the data.
+  - **Resolved 2026-10-21: NVD reports 0.1.**
+    - NVD API query `cvssV3Metrics=AV:P/AC:H/PR:H/UI:R`, fetched
+      2026-10-21, returned 4 CVEs, all with NVD Primary scores.
+      - Scope unchanged (`S:U`) gives exploitability **0.1**:
+        CVE-2018-5235 (v3.0), CVE-2019-2872 and CVE-2019-18373 (v3.1).
+      - Scope changed (`S:C`) gives **0.2**: CVE-2018-2888 (v3.0).
+    - The 0.2 is not a rounding effect. In the CVSS v3 spec the PR weight
+      depends on scope: PR:H is 0.27 under `S:U` and 0.50 under `S:C`. That
+      gives 8.22·0.2·0.44·0.50·0.62 = 0.224 → 0.2.
+    - So the floor reports as 0.1 (round to nearest, not up). It is
+      consistent with `E_lo = 0.1`, and no anchor changes.
+    - The formula above is shorthand for the spec's scope-dependent PR
+      weight. We read NVD's reported `exploitabilityScore`, which already
+      includes it, so the encoding is unaffected.
+    - Cross-check: recomputing from the spec weights over both scopes gives
+      the 26 reachable `k` values stated below. All 22 distinct values seen
+      in the D11 measurement fall inside that set.
   - Either way, every reported `E` lies in [0.1, 3.9]. We fix `E_lo = 0.1` and
     `E_hi = 3.9`, i.e. `k ∈ [1, 39]`.
   - Computing the anchors from the observed CVE set is **rejected**. It would

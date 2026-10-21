@@ -39,3 +39,55 @@ the session.
 **Note on history.** File modification times show the code in `src/`, `tests/` and `scripts/` was written on
 2026-10-17. It was first committed on 2026-10-19, so commit timestamps reflect
 commit time, not authoring time.
+
+## 2026-10-21 — Claude Code (Claude Opus 5.5)
+
+**Session 2: handout removal, cost encoding decision (D9), topology generators (D10).**
+
+- **Housekeeping (2026-10-19, logged late).**
+  - Removed the course handout from the working tree. It remains in git
+    history at commit `28683ef`, because rewriting pushed history is forbidden
+    (CLAUDE.md §7).
+  - Renamed the proposal to `docs/proposal.md`.
+- **D9: integer cost encoding** (`docs/decisions.md`).
+  - Compared three encodings and recorded the one chosen: `C = 389 − 9k`
+    with `k = round(10·E)`, a 38× scaling of `c ∈ [1, 10]`.
+  - The `[VERIFY]` on the formula being identical in CVSS v3.0 and v3.1 was
+    resolved on the author's instruction.
+  - The NVD rounding `[VERIFY]` is still open.
+- **Topology generators.** Claude Code wrote:
+  - `src/ahg/network.py`: a typed, JSON-serialisable network description
+    with validation and label-free structure statistics;
+  - `src/ahg/topology.py`: seeded flat, tiered and hub-and-spoke generators;
+  - `tests/test_topology.py`;
+  - `scripts/gen_networks.py`: prints and saves one example network per
+    family. Its output goes to a temporary directory and is not committed.
+- **Bug found and fixed.** The first version seeded on `seed` alone, so the
+  same seed gave identical service assignments in every family. The
+  generators now seed on `"family:seed"`; the reason is in D10.
+- **D10** (`docs/decisions.md`) records the family rules and the default
+  probabilities. These defaults define the training distribution.
+- **Also committed:** the author's own reframing of `CLAUDE.md` §0. That text
+  was written by the author, not Claude Code.
+- **Files touched:** `src/ahg/network.py`, `src/ahg/topology.py`,
+  `scripts/gen_networks.py`, `tests/test_topology.py`, `docs/decisions.md`,
+  `docs/ai_usage_log.md`.
+- **How verified.**
+  - `.venv/bin/python -m pytest -q` gave **562 passed**: the 125 earlier
+    tests plus 437 new ones.
+  - The new tests check:
+    - same seed gives byte-identical JSON, in-process and across two
+      processes with different `PYTHONHASHSEED`;
+    - JSON round-trip;
+    - the recorded metadata regenerates the identical network;
+    - every host is reachable from the internet;
+    - each family's rules hold;
+    - same seed gives different service draws across families;
+    - a classifier with no labels recovers the family for 50/50 seeds at
+      n = 30 and n = 60;
+    - bad parameters and malformed JSON are rejected.
+  - Example networks were inspected by hand from the script output.
+  - Every file:line citation in D10 was checked against numbered source
+    output.
+- **Known limitation.** At n ≈ 10, flat and tiered networks are not reliably
+  distinguishable by structure. This is recorded in D10.

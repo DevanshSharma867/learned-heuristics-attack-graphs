@@ -1,0 +1,57 @@
+{
+ "date_utc": "2026-10-22T11:46:20+00:00",
+ "git_commit": "4f00c1bbfa7ae01c6b5025a95d3cac2943369771",
+ "git_dirty": false,
+ "argv": [
+  "scripts/measure_landscape.py",
+  "small"
+ ],
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19
+ ],
+ "config": {
+  "name": "landscape_small_n",
+  "variant": "pr_gated",
+  "families": [
+   "flat",
+   "tiered",
+   "hub_and_spoke"
+  ],
+  "sizes": [
+   6,
+   8,
+   12
+  ],
+  "seeds_per_cell": 20,
+  "reachable_target": null,
+  "budget": 200000,
+  "sample_cap": 300,
+  "walks_per_sample": 10,
+  "enumerate": true,
+  "enum_cap": 50000,
+  "sampling_rng": "random.Random('landscape:{family}:{n}:{seed}')"
+ },
+ "python": "3.12.13 (main, Apr 14 2026, 14:33:40) [Clang 22.1.3 ]",
+ "platform": "macOS-15.6-arm64-arm-64bit",
+ "machine": "arm64",
+ "processor": "arm"
+}

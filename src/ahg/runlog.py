@@ -26,8 +26,8 @@ def provenance(seeds: list[int], config: dict) -> dict:
     """The stamp CLAUDE.md rule 9 asks for. dirty=True means the numbers may not match the commit.
 
     The package has no runtime dependencies yet, so the Python version is the
-    only version recorded. TODO: once PyTorch (and PyG) become dependencies,
-    add their versions here.
+    only version recorded. TODO: when PyTorch (and PyG) become dependencies,
+    add their versions here BEFORE any run that uses them (CLAUDE.md rule 9).
     """
     return {
         "date_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),

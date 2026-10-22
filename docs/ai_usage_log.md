@@ -224,3 +224,47 @@ commit time, not authoring time.
     - the first six CSV columns and `build_log.json` stayed byte-identical
       after regeneration;
     - a second derive run was byte-identical.
+
+## 2026-10-22 — Claude Code (Claude Opus 5.5)
+
+- **Lost reports.** The two earlier landscape reports (`pr_landscape`,
+  `pr_landscape_large`) lived in a session scratchpad that had been cleared,
+  and their measurement scripts were gone too. Nothing was reconstructed
+  from memory; both measurements were re-run fresh (below).
+- **Run output in the repo.** Added `src/ahg/runlog.py`: `write_run()` puts
+  each measurement run in `results/landscape/<name>/<UTC timestamp>-<commit>/`
+  as `raw.json`, `report.md` and `provenance.json` (git commit, dirty flag,
+  argv, seeds, config, date, Python, platform, hardware). An existing run
+  directory is never overwritten (rule 11). `.gitignore` now tracks
+  `results/landscape/`. TODO in `provenance()`: library versions must be
+  added before any PyTorch run.
+- **`scripts/measure_landscape.py`.** One script, two runs
+  (`landscape_small_n`, `landscape_large_n`) on the PR-gated variant. Per
+  family × size cell: reachable vs UnreachableGoal seeds, median plan length
+  and h\*, median nodes expanded from init by h0 / h_max / LM-cut (budget
+  hits flagged as lower bounds), and the fraction and gap of h_max and LM-cut
+  below h\* over up to 300 random-walk states per instance. At small n it
+  also enumerates every reachable state and reports sampled vs exact side
+  by side. `report.md` is rendered from `raw.json` alone.
+- **Runs.** Both at commit 4f00c1b with a clean tree; numbers are in
+  `docs/experiment_log.md`. Headline: LM-cut below h\* on 0–2% of states and
+  A\* expands about plan-length nodes at every size.
+- **Did not touch** the depth-coupling sweep (`dc_sweep.py`) running in
+  another session; its output will be brought in separately.
+- **Files touched:** `src/ahg/runlog.py`, `scripts/measure_landscape.py`,
+  `.gitignore`, `results/landscape/**`, `docs/experiment_log.md`,
+  `docs/ai_usage_log.md`.
+- **How verified.**
+  - `.venv/bin/python -m pytest -q`: **975 passed, 3 skipped**.
+  - `write_run()` smoke test into the scratchpad: all three files written,
+    and a second write to the same directory was refused.
+    `git check-ignore` confirmed `results/landscape/` is tracked and
+    `results/raw/` is still ignored.
+  - The script aborts before writing on any h\* mismatch or admissible
+    heuristic above h\*. h\* was checked three ways: A\*+LM-cut, A\*+h_max,
+    and (small n) backward induction over the enumerated state space.
+  - The near-perfect h_max was checked by hand against the independent
+    oracle (`src/ahg/oracle.py`) on one instance per family at n = 12. h_sp
+    and h_add differ from h\* on the same states, so the heuristics are not
+    degenerate.
+  - A one-seed-per-cell pilot ran before both full runs.

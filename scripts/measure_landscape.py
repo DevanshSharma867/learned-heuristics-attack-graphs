@@ -194,8 +194,8 @@ def render(raw):
          f"PR-gated attack graphs, families {', '.join(cfg['families'])}, n in {cfg['sizes']}. "
          f"Costs in D9 integer units (38 per effort unit). Expansion budget {cfg['budget']:,}; "
          f"up to {cfg['sample_cap']} sampled non-goal states per instance.", "",
-         "h* is from A*+LM-cut, cross-checked against A*+h_max on every state "
-         + ("and against full enumeration on every enumerated instance. " if cfg["enumerate"] else ". ")
+         "h* is from A*+LM-cut, cross-checked against A*+h_max on every state"
+         + (" and against full enumeration on every enumerated instance. " if cfg["enumerate"] else ". ")
          + "No mismatch and no admissible heuristic above h* occurred (either would have aborted the run).", "",
          "**Gap columns.** `h<h*` is the fraction of states where the heuristic is strictly below h*. "
          "`mean gap` is the mean of h* − h over *all* evaluated states (zeros included); `max gap` is the largest.", ""]

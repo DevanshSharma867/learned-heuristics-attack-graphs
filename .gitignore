@@ -12,3 +12,5 @@ results/*
 !results/raw/
 results/raw/*
 !results/raw/.gitkeep
+# Measurement runs (raw.json, report.md, provenance.json) are tracked.
+!results/landscape/

@@ -855,6 +855,13 @@ was made before any part of the sweep ran:**
   without it cred(1) can be unobtainable;
 - the shared sampling stream in §3, needed for the anchor cells to
   reproduce [S].
+- an erratum to the meaning of n, found while writing the tests:
+  - n is `n_hosts`, the number of internal hosts, as in [S]/[L]; the
+    internet is one more host;
+  - the draft wrongly read n as including the internet;
+  - so "n − 1" became n in the level-count condition and in the
+    share-pool size m;
+  - the grid values are unchanged.
 
 **The R ≥ 5 threshold in §6 was chosen before any run** and is unchanged by
 the amendments.
@@ -908,7 +915,7 @@ tier.
   stream:
   - the target is at level D;
   - for each k in 0…D−1, one non-target host is forced to level k, so that
-    every level is occupied. This needs n − 1 ≥ D + 1 internal hosts;
+    every level is occupied. This needs n ≥ D + 1 internal hosts;
     otherwise `make_instance` raises `KnobInfeasible`, which is logged as a
     generation failure.
     - *Amendment, before any run:* the draft forced only levels 1…D−1. With
@@ -964,7 +971,7 @@ k ∉ {src, h}.
 *Schema.*
 
 - **Secret holders.** From the coupling stream, draw a pool P of m distinct
-  internal hosts (m = 1: one shared secret holder; m = n − 1: all internal
+  internal hosts (m = 1: one shared secret holder; m = n: all internal
   hosts).
 - **Which exploits.** Each exploit with an *internal* src is selected
   independently with probability ρ. Exploits from the internet are exempt,
@@ -977,7 +984,7 @@ k ∉ {src, h}.
 - **m** sets how much those preconditions are shared:
   - small m: a few holders feed many actions, i.e. shared landmarks. This is
     predicted easy for LM-cut, like `capability(user)` in [S]/[L].
-  - m = n − 1: mostly distinct holders, i.e. many interacting sub-goals.
+  - m = n: mostly distinct holders, i.e. many interacting sub-goals.
 
 *Reachability.* Coupling can create cycles (k reachable only through h), so
 instances can become unreachable. They are logged as for (a).
@@ -987,9 +994,9 @@ instances can become unreachable. They are logged as for (a).
 | axis | values |
 |---|---|
 | `cred_levels` D | 0, 1, 2, 3 |
-| (ρ, m) | (0, –), (0.25, 1), (0.25, n−1), (0.5, 1), (0.5, n−1), (1, 1), (1, n−1) |
+| (ρ, m) | (0, –), (0.25, 1), (0.25, n), (0.5, 1), (0.5, n), (1, 1), (1, n) |
 | family variant | flat, hub_and_spoke, tiered (`n_tiers`=3), tiered (`n_tiers`=5) |
-| n (hosts incl. internet) | 8, 12, 20 |
+| n (`n_hosts`: internal hosts; the internet is one more, as in [S]/[L]) | 8, 12, 20 |
 | seeds per cell | 0–19, fixed. No "until k reachable" rule, so seed selection is the same in every cell. |
 
 - **Size.** 4 × 7 = 28 knob configurations × 4 family variants × 3 sizes =
@@ -1062,7 +1069,7 @@ instances can become unreachable. They are logged as for (a).
 - **Instance accounting, every category logged and listed by seed:**
   reachable, `UnreachableGoal`, any other generation failure
   (`KnobInfeasible`: forced levels cannot be placed because
-  n − 1 < D + 1), init searches at
+  n < D + 1), init searches at
   budget, `h* unknown` states, and coupled exploits left unchanged.
 - **Structure descriptors** (so a hard cell can be explained):
   - #facts, #actions, #reachable states;

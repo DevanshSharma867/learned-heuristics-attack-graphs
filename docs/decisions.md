@@ -842,3 +842,366 @@ Each batch directory holds:
   model checkpoint and the train batch ids they came from.
 - **Separate decisions.** Validation is used for early stopping and tuning
   only. Test batches are read only by the evaluation scripts.
+
+## 2026-10-28 — D15: Depth–coupling sweep design
+
+**Status: ADOPTED (sweep design), 2026-10-28.** It was drafted as
+PROPOSED, then amended and adopted the same day. **Every amendment below
+was made before any part of the sweep ran:**
+
+- the censoring rule in §6 (censored instances count as R = +∞);
+- the report-row requirement in §4;
+- the forced level-0 host in §1(a), found while specifying the generator:
+  without it cred(1) can be unobtainable;
+- the shared sampling stream in §3, needed for the anchor cells to
+  reproduce [S].
+
+**The R ≥ 5 threshold in §6 was chosen before any run** and is unchanged by
+the amendments.
+
+It replaces the earlier depth-coupling sweep (`findings.md` §5 item 1),
+which left no committed script or output and is treated as never run.
+
+**Question.** Is there any structural regime of the generator in which
+h_max and LM-cut stop being near-exact, i.e. in which A\*+LM-cut expands
+substantially more than plan-length nodes? The explanation under test
+(`findings.md` §4): optimal plans are short, and prerequisites are shallow
+and do not interact. Each knob below lengthens or couples prerequisites.
+
+### 1. Generator knobs
+
+Two new keyword arguments to `build_task` / `make_instance`, both off by
+default. A third axis reuses an existing D10 parameter.
+
+**Byte-identity requirement.** With `cred_levels=0` and `coupling=0`, the
+default D12 schema and the `pr_gated=True` variant must produce identical
+output: same facts, same actions in the same order, same names, costs and
+goal.
+
+- *Test.* Golden SHA-256 hashes of the serialised `Task` for every family ×
+  n ∈ {6, 8, 12, 20} × seeds 0–9 × `pr_gated` ∈ {False, True}. They are
+  computed at the commit before the change and asserted afterwards.
+- *Rng streams.* Each knob draws from its own stream (`"depth:family:seed"`,
+  `"coupling:family:seed"`). The topology, CVE and goal streams (D10, D12)
+  are never consumed differently.
+- *Fact indices.* New facts are appended after every existing fact (hosts,
+  then `pr_gated` capabilities), so existing indices never move.
+
+**Base schema for the sweep.** The knobs act on the D12 schema with
+`pr_gated=False`, so their effect is not mixed with PR gating. The two
+compose (independent extra preconditions), but only the anchor cells (§2)
+use `pr_gated=True`.
+
+#### (a) Depth: `cred_levels = D` (0 = off)
+
+*Security grounding.* Tiered administrative credentials, as in
+Active-Directory-style tiering. Hosts in a higher tier accept access only
+with that tier's credentials. Those credentials are cached on machines one
+tier down, where higher-tier admins log in. Breaking such a tier model is
+exactly a credential-hopping chain: compromise a host, dump the cached
+credentials, use them together with a network position to enter the next
+tier.
+
+*Schema.*
+
+- **Levels.** Every internal host gets a level in {0, …, D} from the depth
+  stream:
+  - the target is at level D;
+  - for each k in 0…D−1, one non-target host is forced to level k, so that
+    every level is occupied. This needs n − 1 ≥ D + 1 internal hosts;
+    otherwise `make_instance` raises `KnobInfeasible`, which is logged as a
+    generation failure.
+    - *Amendment, before any run:* the draft forced only levels 1…D−1. With
+      no level-0 host, cred(1) has no harvest action, so every gated host,
+      and the goal, would be unreachable by construction rather than by
+      structure.
+  - every other host is drawn uniformly from {0, …, D}.
+- **Facts.** `cred(1)` … `cred(D)`.
+- **Harvest.** `harvest cred(k)@h`, for each internal host h at level k − 1:
+  pre {execCode(h)}, add {cred(k)}, cost `LOGIN_COST`.
+- **Gated entry.** Every exploit and login whose effect is execCode(h), for
+  h at level k ≥ 1, gains `cred(k)` as an extra conjunctive precondition.
+  - Entering a level-k host therefore needs a credential taken from a
+    *different* host at level k − 1, AND network access from a controlled
+    `src`.
+  - So reaching the target is a chain of D conjunctive steps across hosts.
+- **Exploit costs** stay CVSS-derived (D9). Only the gate is added.
+
+*Why h_max should degrade.* h_max takes the max over preconditions, while h\*
+pays for both branches (the credential and the network position). The gap
+should grow with D. LM-cut prices disjoint landmarks additively, so it
+should degrade only where the credential branch and the network branch
+share actions. That is a falsifiable prediction, recorded before running.
+
+*Reachability.* Repair edges (D10) guarantee a host-graph path, not a path
+that respects levels. Instances whose goal becomes unreachable raise
+`UnreachableGoal` and are logged per cell (rule 10).
+
+#### (b) Hop depth: tiered `n_tiers` ∈ {3 (D10 default), 5}
+
+*Security grounding.* The depth of network segmentation: the number of
+firewalled zones between the internet and the asset.
+
+- This uses the existing D10 parameter, so no new code is needed.
+- It applies to tiered only. flat and hub_and_spoke have no zone-depth
+  parameter, and adding one would change their family definitions (D10).
+- `choose_target` already picks among the deepest hosts.
+
+#### (c) Coupling: `coupling = ρ` ∈ [0, 1], with `share_pool = m`
+
+*Security grounding.* Lateral movement that needs material from a third
+host, besides network access to the target. Examples:
+
+- a database password read from an application server's config, then used
+  against the DB;
+- NTLM relay, which needs a controlled host to coerce or capture
+  authentication plus a host that reaches the target service;
+- a payload staged on an internal file share.
+
+In each case the second precondition is "control of host k", with
+k ∉ {src, h}.
+
+*Schema.*
+
+- **Secret holders.** From the coupling stream, draw a pool P of m distinct
+  internal hosts (m = 1: one shared secret holder; m = n − 1: all internal
+  hosts).
+- **Which exploits.** Each exploit with an *internal* src is selected
+  independently with probability ρ. Exploits from the internet are exempt,
+  so the first foothold is unconstrained, as before.
+- **Extra precondition.** A selected exploit on host h gains execCode(k),
+  with k drawn uniformly from P \ {src, h}. If that set is empty, the exploit
+  is left unchanged, and the count of such exploits is logged.
+- **ρ** sets how many actions carry two non-trivial preconditions from
+  different hosts.
+- **m** sets how much those preconditions are shared:
+  - small m: a few holders feed many actions, i.e. shared landmarks. This is
+    predicted easy for LM-cut, like `capability(user)` in [S]/[L].
+  - m = n − 1: mostly distinct holders, i.e. many interacting sub-goals.
+
+*Reachability.* Coupling can create cycles (k reachable only through h), so
+instances can become unreachable. They are logged as for (a).
+
+### 2. Grid
+
+| axis | values |
+|---|---|
+| `cred_levels` D | 0, 1, 2, 3 |
+| (ρ, m) | (0, –), (0.25, 1), (0.25, n−1), (0.5, 1), (0.5, n−1), (1, 1), (1, n−1) |
+| family variant | flat, hub_and_spoke, tiered (`n_tiers`=3), tiered (`n_tiers`=5) |
+| n (hosts incl. internet) | 8, 12, 20 |
+| seeds per cell | 0–19, fixed. No "until k reachable" rule, so seed selection is the same in every cell. |
+
+- **Size.** 4 × 7 = 28 knob configurations × 4 family variants × 3 sizes =
+  **336 cells, 6,720 instances**. All other generator parameters are at the
+  D10 defaults. tiered at n = 8 with 5 tiers has ~1–2 hosts per tier; such
+  cells are reported but flagged.
+- **Anchor cells.** D = 0, ρ = 0, with `pr_gated=True`, at n ∈ {8, 12}. The
+  new script must reproduce the [S] per-instance numbers for those
+  (family, n, seed) exactly. This checks that the new tooling measures the
+  same thing as `measure_landscape.py`.
+- **Budgets.** All caps are expansion counts, never wall-clock timeouts, so
+  every result is deterministic and reproducible.
+  - Search from the initial state: 200,000 expansions per search (h0,
+    h_max, LM-cut), as in [S]/[L]. A capped count is a lower bound and is
+    flagged.
+  - h\* of a measured state (§3): 20,000 expansions per search.
+  - Labelling, per instance: 2,000,000 expansions in total across all
+    measured states. Once it is spent, the remaining states are counted as
+    `h* unknown`, never dropped.
+- **Enumeration.** Full enumeration plus backward induction, capped at
+  `ENUM_CAP` = 50,000 reachable states, as in [S].
+  - At n = 12, [S] had a median of 3,079 and a max of 9,023 reachable
+    states. D credential facts can multiply that by up to 2^D, so some
+    n = 12, D = 3 instances will exceed the cap.
+  - Instances that are not enumerated are counted per cell.
+  - n = 8 is expected to enumerate everywhere; n = 20 will not.
+
+### 3. Which states are measured
+
+1. **Initial state.** Every instance.
+2. **Random-walk samples.** The D14 §2 off-optimal rollouts, up to 300
+   distinct non-goal states per instance. The procedure is identical to
+   `measure_landscape.sample_states`. The rng is
+   `"landscape:{family}:{n}:{seed}"`, the [S]/[L] stream, in every knob
+   configuration.
+   - *Amendment, before any run:* the draft named a per-configuration
+     stream, under which the anchor cells could not reproduce [S]'s
+     sampled states.
+   - The tasks differ between configurations anyway, so sharing the stream
+     only gives common random numbers across configurations.
+3. **A\*-expanded states (`findings.md` §5 item 3).** Every state expanded
+   by A\*+LM-cut from the initial state, and separately every state
+   expanded by A\*+h_max.
+   - *Lookup.* Where the instance is enumerated, h\* comes from the backward
+     induction table for every expanded state.
+   - *Otherwise.* Up to 300 expanded states are drawn uniformly (recorded
+     rng) and labelled by A\*. A subsampled set is flagged.
+   - *Code change needed.* `SearchResult` does not expose the expanded
+     states today. This needs an opt-in `trace=` argument on
+     `best_first_search` that records each state at the point where
+     `expanded` is incremented. A test asserts that expansion counts, plans
+     and costs are unchanged with and without tracing, for every heuristic.
+4. **Every reachable state** where enumerated, as in [S]. This keeps sampler
+   bias visible next to the sampled and expanded-state numbers.
+
+### 4. Metrics (per instance; per cell as medians, plus a bootstrap 95% CI where stated)
+
+- **Effort.** Nodes expanded from the initial state by h0, h_max and LM-cut
+  (D6 convention), next to the optimal plan length and h\*. The primary
+  ratio is **R = expanded(LM-cut) / plan length**; R_hmax likewise.
+  - An instance whose initial A\*+LM-cut search hit the budget is
+    *censored*: its R is +∞ (§6).
+- **Report rows (amendment, before any run).** In `report.md`, each cell's
+  row shows median R, the censored count, the reachable fraction (k/20)
+  and the generation-failure count side by side. A hard cell that is
+  mostly unreachable is then visible at once.
+- **Exactness.** For h_max and LM-cut, separately over the sampled,
+  expanded and enumerated state sets: the fraction of states with h < h\*,
+  the mean gap, and the max gap (in D9 units and effort units).
+- **Instance accounting, every category logged and listed by seed:**
+  reachable, `UnreachableGoal`, any other generation failure
+  (`KnobInfeasible`: forced levels cannot be placed because
+  n − 1 < D + 1), init searches at
+  budget, `h* unknown` states, and coupled exploits left unchanged.
+- **Structure descriptors** (so a hard cell can be explained):
+  - #facts, #actions, #reachable states;
+  - the number of actions with ≥ 2 non-trivial preconditions from distinct
+    hosts;
+  - the length of the credential chain on the optimal plan;
+  - the target's hop depth.
+- **Time.**
+  - Per-instance wall-clock, plus per-heuristic search time from the
+    initial state, including heuristic computation (rule 7).
+  - This is diagnostic: if instances run in parallel workers, absolute
+    times are noisier. All methods for one instance run sequentially in the
+    same worker, so within-instance comparisons stay paired.
+  - Hardware is recorded in provenance; see the note in §7.
+
+### 5. h\* checks
+
+- **Abort on any mismatch, as in `measure_landscape.py`.** Nothing is
+  written if any of these fail:
+  - A\*+LM-cut = A\*+h_max on every measured state;
+  - backward induction = A\* on every measured state of enumerated
+    instances;
+  - UCS = h\* on the initial state where UCS finished;
+  - no admissible heuristic above h\* on any measured state;
+  - no reachable state with infinite h\*.
+- **Independent oracle (`src/ahg/oracle.py`) on the actual run instances.**
+  - *n ∈ {8, 12}, every enumerated instance:* `optimal_cost` from the
+    initial state, plus from 20 states drawn uniformly (recorded rng) from
+    the union of sampled and expanded states.
+  - *n = 20:* from the initial state only, and only where `uniform_cost`
+    finished within budget. The oracle has no budget, and it explores the
+    same space, so this bounds its run time without changing its code.
+  - *On mismatch:* abort.
+- **Recording.** `raw.json` stores, per instance, a list of
+  `(state, oracle h*, A* h*)` for every oracle-checked state. `report.md`
+  shows per cell how many instances and states the oracle checked, so the
+  claim "checked by the independent oracle" is scoped exactly.
+
+### 6. Pre-registered success criterion
+
+Fixed here, before any run. Changing it after seeing results needs a new
+D-entry that says so.
+
+- **Calibration from [S]/[L].** Median R is ≈ 1.0–1.25 in every cell
+  measured so far. For example, tiered n = 12 has h_max 6 and LM-cut 5
+  against plan length 5.
+- **Eligible cell.** n ≥ 12, ≥ 10 reachable instances out of 20, and median
+  plan length ≥ 3 among the instances whose initial A\*+LM-cut search
+  solved. The plan-length rule excludes trivially short plans, where a
+  small absolute excess gives a large R.
+- **Censoring (amendment, before any run).** A budget hit must not make a
+  cell look easier or drop out.
+  - *Censored instances stay in.* An instance whose initial A\*+LM-cut
+    search hit the 200k budget counts as censored-hard, with R = +∞. It
+    stays in the median and in every bootstrap resample as +∞.
+  - *Only two exclusions.* An instance is excluded from R only if it is
+    unreachable or a generation failure.
+  - *Censoring never makes a cell ineligible.* The censored count is
+    reported next to R.
+  - *Mostly censored cells.* If more than half of a cell is censored, its
+    median R is +∞. It meets condition 1 below, but still needs the
+    fresh-seed confirmation in condition 2.
+  - *Cross-check.* If LM-cut solved but A\*+h_max hit the budget, R is
+    finite, taken from LM-cut's plan. That instance is flagged
+    "h\* not cross-checked".
+- **A hard regime exists** if at least one eligible cell meets **both**:
+  1. median R ≥ 5, with the bootstrap 95% CI lower bound of the median ≥ 3
+     (10,000 resamples of instances);
+  2. **confirmation on fresh seeds.** The same cell rerun on seeds 100–119
+     gives median R ≥ 5 again.
+
+  336 cells are screened. Without fresh seeds, a single cell crossing a
+  threshold could be selection noise, which is why condition 2 is required.
+- **Why 5.** If A\*+LM-cut expands ≥ 5× plan length, a perfect heuristic
+  could save ≥ 80% of expansions. That leaves room for an H1 effect large
+  enough to survive the inference-time cost (`findings.md` §5 item 5).
+  Below that, any learned-heuristic win would sit inside the noise of
+  inference overhead.
+- **Secondary, descriptive only (never sufficient alone).** In the cells
+  that meet the criterion, LM-cut has h < h\* on ≥ 20% of A\*-expanded
+  states. The same statistics are reported for h_max with R_hmax.
+- **If no eligible cell meets it.** Within this generator and these knob
+  ranges, classical admissible A\* is near-exact, and H1 as stated has no
+  room to show an effect on these graphs.
+  - That is recorded as a negative result in `findings.md`, using the
+    full grid, the predictions in §1 and whether they held.
+  - The knob ranges are **not** widened post hoc to search for a hard cell.
+    Any further sweep (larger D, other generators, multi-goal tasks) needs
+    its own pre-registered D-entry.
+  - The paper framing, and any hypothesis revision, is then decided in a
+    separate D-entry. This draft does not decide it.
+
+### 7. Runtime estimate (M4 MacBook, 16 GB)
+
+- **Base rates.** These come from the [S]/[L] runs on this machine's
+  platform (macOS 15.6 arm64; the provenance has no hardware field, see
+  below). Median per-instance time including 300 sampled states is 0.15 s
+  at n = 8, 1.1 s at n = 12 and 3.3 s at n = 20.
+- **Easy cells** (structure like [S]/[L]). With the expanded-state and
+  oracle checks, estimate ≈ 0.2 s, 1.5 s and 4.5 s per instance. At 2,240
+  instances per size that is ≈ 14,000 s ≈ **4 h serial**, or ≈ 40–60 min
+  with 6 worker processes.
+- **Hard cells, which the sweep is looking for, dominate and cannot be
+  estimated before the pilot.**
+  - *UCS.* In [L], a UCS search that hit the 200k budget took 11–130 s.
+  - *LM-cut.* An LM-cut search at budget costs several times more per
+    expansion.
+  - *Bound.* The labelling budget (§2) bounds a hard instance to roughly
+    3 × 200k init expansions plus 2M labelling expansions, i.e. tens of
+    minutes worst case.
+  - *Example.* If 10% of n = 20 instances were hard, that alone would be on
+    the order of 100+ h serial.
+- **Plan.**
+  1. A pilot of one seed per cell (336 instances, written nowhere) measures
+     the real per-cell cost.
+  2. n ∈ {8, 12} then runs locally in any case. Memory is not a constraint:
+     ≤ 50k enumerated states and ≤ 200k open/closed states per process.
+  3. n = 20 runs locally if the pilot projects ≤ 12 h with 6 workers.
+     Otherwise it goes to the cluster, unchanged, with the same config and
+     a commit recorded in provenance.
+
+**Before the real run: provenance needs a hardware field.** The [S]/[L]
+`provenance.json` files have `platform` and `python` but no CPU/RAM. Rule
+9 and D14 §4 require hardware, so `runlog.provenance()` must record CPU
+model, core count and RAM. Library versions (an open TODO there) should be
+added at the same time.
+
+### Implementation footprint (for approval; nothing is built yet)
+
+- `src/ahg/attack_graph.py`: `cred_levels`, `coupling` and `share_pool`
+  arguments, plus a docstring section for each.
+- `src/ahg/search.py`: opt-in `trace=` for expanded states.
+- `src/ahg/runlog.py`: hardware and library versions in provenance.
+- `scripts/measure_depth_coupling.py`: reuses the measurement helpers of
+  `measure_landscape.py`. Move them into one shared module rather than
+  copying them, and keep `measure_landscape.py` behaving identically.
+- Output: `results/landscape/depth_coupling_sweep/` via `write_run`.
+- Tests:
+  - the byte-identity golden hashes;
+  - knob semantics (levels occupied, gates present, coupled k ∉ {src, h});
+  - oracle vs search on knob instances at n ≤ 8;
+  - search counts unchanged with `trace`.

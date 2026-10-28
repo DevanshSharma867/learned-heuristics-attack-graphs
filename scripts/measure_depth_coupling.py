@@ -1,12 +1,18 @@
 """D15 depth-coupling sweep: does any knob setting make h_max / LM-cut stop being near-exact?
 
-Usage: python scripts/measure_depth_coupling.py pilot|full [--workers N]
+Usage: python scripts/measure_depth_coupling.py pilot|full [--d16] [--workers N]
+       python scripts/measure_depth_coupling.py confirm --cells "KEY;KEY" [--d16] [--workers N]
 
   pilot  seed 0 of every grid cell, plus the anchor cells (D12 + pr_gated,
          knobs off, n in {8, 12}) on seeds 0-19. The anchors must reproduce
          landscape_small_n [S] exactly, or the run aborts before writing.
          Written to results/landscape/depth_coupling_sweep/pilot/.
   full   seeds 0-19 of every grid cell -> results/landscape/depth_coupling_sweep/full/.
+  confirm  the D15 §6 fresh-seed confirmation: the named cells (keys as in
+         report.md) on seeds 100-119 -> .../depth_coupling_sweep/confirm/.
+  --d16  the D16 variant of the depth knob (internet-exposed hosts at level 0);
+         run names get a "_d16" suffix. Anchor cells have D = 0, so D16 does
+         not touch them.
 
 Grid (D15 §2): cred_levels D x (coupling rho, share_pool m) x family variant x n.
 Per instance (D15 §3-§5):
@@ -58,16 +64,17 @@ VARIANTS = [("flat", "flat", {}), ("hub_and_spoke", "hub_and_spoke", {}),
             ("tiered", "tiered3", {}), ("tiered", "tiered5", {"n_tiers": 5})]
 SIZES = [8, 12, 20]
 SEEDS = range(20)
+CONFIRM_SEEDS = range(100, 120)  # D15 §6 condition 2
 ANCHOR_SIZES = [8, 12]
 
 
-def grid_cells():
-    return [dict(family=f, variant=v, params=p, n=n, D=D, rho=rho, m=m, pr_gated=False)
+def grid_cells(d16=False):
+    return [dict(family=f, variant=v, params=p, n=n, D=D, rho=rho, m=m, pr_gated=False, e0=d16)
             for n in SIZES for f, v, p in VARIANTS for D in LEVELS for rho, m in COUPLINGS]
 
 
 def anchor_cells():
-    return [dict(family=f, variant=v, params=p, n=n, D=0, rho=0.0, m=None, pr_gated=True)
+    return [dict(family=f, variant=v, params=p, n=n, D=0, rho=0.0, m=None, pr_gated=True, e0=False)
             for n in ANCHOR_SIZES for f, v, p in VARIANTS if v != "tiered5"]
 
 
@@ -124,11 +131,11 @@ def measure_instance(job):
     idx, cell, seed = job
     c = cell
     base = {"cell": cell_key(c), "family": c["family"], "variant": c["variant"], "n": c["n"], "seed": seed,
-            "D": c["D"], "rho": c["rho"], "m": c["m"], "pr_gated": c["pr_gated"]}
+            "D": c["D"], "rho": c["rho"], "m": c["m"], "pr_gated": c["pr_gated"], "exposed_level0": c["e0"]}
     t0 = time.perf_counter()
     try:
         inst = make_instance(c["family"], seed, c["n"], _POOL, pr_gated=c["pr_gated"], cred_levels=c["D"],
-                             coupling=c["rho"], share_pool=c["m"], **c["params"])
+                             coupling=c["rho"], share_pool=c["m"], exposed_level0=c["e0"], **c["params"])
     except UnreachableGoal as e:
         return idx, {**base, "status": "unreachable", "reason": str(e)}
     except KnobInfeasible as e:
@@ -275,7 +282,8 @@ def render(raw):
         cells.setdefault(r["cell"], []).append(r)
     L = [f"# {cfg['name']}", "",
          f"Mode **{cfg['mode']}**" + (" — a pilot for timing and tooling, not a result (D15 §7)." if cfg["mode"] == "pilot" else "."),
-         f"D12 schema (pr_gated off) with the D15 knobs; anchor cells are pr_gated with knobs off. "
+         f"D12 schema (pr_gated off) with the D15 knobs" + (", depth knob in its D16 variant (internet-exposed hosts at level 0)"
+         if cfg.get("exposed_level0") else ", depth knob as registered in D15") + "; anchor cells are pr_gated with knobs off. "
          f"Init budget {cfg['budget']:,} expansions; per-state labelling budget {cfg['state_budget']:,}, "
          f"per-instance {cfg['label_budget']:,}. Costs in D9 units (38 per effort unit).", "",
          "h* checks passed on every instance (any failure would have aborted the run): A*+LM-cut = A*+h_max, "
@@ -352,11 +360,20 @@ def render(raw):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("pilot", "full"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("pilot", "full", "confirm"):
         sys.exit(__doc__)
-    mode = sys.argv[1]
+    mode, d16 = sys.argv[1], "--d16" in sys.argv
     workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 6
-    jobs = [(c, s) for c in grid_cells() for s in ([0] if mode == "pilot" else SEEDS)]
+    grid = grid_cells(d16)
+    if mode == "confirm":
+        wanted = sys.argv[sys.argv.index("--cells") + 1].split(";")
+        by_key = {cell_key(c): c for c in grid}
+        missing = [k for k in wanted if k not in by_key]
+        if missing:
+            sys.exit(f"unknown cells: {missing}")
+        jobs = [(by_key[k], s) for k in wanted for s in CONFIRM_SEEDS]
+    else:
+        jobs = [(c, s) for c in grid for s in ([0] if mode == "pilot" else SEEDS)]
     if mode == "pilot":
         jobs += [(c, s) for c in anchor_cells() for s in SEEDS]
     jobs = [(i, c, s) for i, (c, s) in enumerate(jobs)]
@@ -367,9 +384,11 @@ def main():
             out[i] = rec
             print(f"[{done}/{len(jobs)} {time.perf_counter() - t0:7.0f}s] {rec['cell']} seed={rec['seed']} "
                   f"{rec['status']} {rec.get('seconds', 0):.2f}s", flush=True)
-    config = {"name": f"depth_coupling_sweep/{mode}", "mode": mode, "decision": "D15", "workers": workers,
+    config = {"name": f"depth_coupling_sweep/{mode}" + ("_d16" if d16 else ""), "mode": mode,
+              "decision": "D15+D16" if d16 else "D15", "exposed_level0": d16, "workers": workers,
+              "cells": wanted if mode == "confirm" else None,
               "levels": LEVELS, "couplings": COUPLINGS, "variants": VARIANTS, "sizes": SIZES,
-              "seeds_per_cell": 1 if mode == "pilot" else len(SEEDS),
+              "seeds_per_cell": 1 if mode == "pilot" else len(CONFIRM_SEEDS if mode == "confirm" else SEEDS),
               "anchor": {"sizes": ANCHOR_SIZES, "seeds": list(SEEDS)} if mode == "pilot" else None,
               "budget": BUDGET, "state_budget": STATE_BUDGET, "label_budget": LABEL_BUDGET,
               "sample_cap": SAMPLE_CAP, "walks_per_sample": WALKS_PER_SAMPLE, "expanded_cap": EXPANDED_CAP,

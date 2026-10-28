@@ -57,6 +57,12 @@ So entering a level-k host needs a credential taken from a different
 (level k-1) host AND network access from a controlled src: a chain of D
 conjunctive steps across hosts on the way to the target.
 
+D16 variant, exposed_level0=True: internet-facing (DMZ) hosts sit outside the
+credential tiers, so every host with a reach edge from the internet is at
+level 0, and the D15 rule above assigns levels among the other hosts only.
+An exposed target, or too few unexposed hosts for levels 1..D-1, raises
+KnobInfeasible. With exposed_level0=False the D15 behaviour is unchanged.
+
 Coupling, coupling = rho and share_pool = m. Lateral movement that also
 needs material from a third host: a database password read from an app
 server's config, NTLM relay (a coercion host plus a host that reaches the
@@ -187,19 +193,26 @@ def choose_target(net: Network, seed: int) -> int:
     return rng.choice(sorted(h for h, d in dist.items() if d == deepest))
 
 
-def assign_levels(net: Network, target: int, cred_levels: int, seed: int) -> dict[int, int]:
+def assign_levels(net: Network, target: int, cred_levels: int, seed: int,
+                  exposed_level0: bool = False) -> dict[int, int]:
     """D15 depth knob: internal host -> credential level in {0..cred_levels} (module docstring).
 
     The target is at the top level and one other host is forced to each lower
     level, so every level is occupied: without a level-0 host cred(1) could
-    never be harvested. Raises KnobInfeasible if there are too few hosts.
+    never be harvested. With exposed_level0 (D16), internet-exposed hosts are
+    level 0 and occupy it, so only levels 1..D-1 are forced among the rest.
+    Raises KnobInfeasible if the levels cannot be placed.
     """
-    others = [h.id for h in net.hosts[1:] if h.id != target]
-    if len(others) < cred_levels:
-        raise KnobInfeasible(f"{len(others) + 1} internal hosts cannot hold {cred_levels + 1} credential levels")
+    exposed = {net.services[r.service].host for r in net.reach if r.src == INTERNET} if exposed_level0 else set()
+    if target in exposed:
+        raise KnobInfeasible(f"target {net.hosts[target].name} is internet-exposed, so it must be level 0 (D16)")
+    others = [h.id for h in net.hosts[1:] if h.id != target and h.id not in exposed]
+    forced = range(1, cred_levels) if exposed_level0 else range(cred_levels)
+    if len(others) < len(forced):
+        raise KnobInfeasible(f"{len(others)} hosts cannot occupy credential levels {list(forced)}")
     rng = random.Random(f"depth:{net.meta['family']}:{seed}")
-    level = {target: cred_levels}
-    for k, h in enumerate(rng.sample(others, cred_levels)):
+    level = {target: cred_levels} | dict.fromkeys(exposed, 0)
+    for k, h in zip(forced, rng.sample(others, len(forced))):
         level[h] = k
     for h in others:
         if h not in level:
@@ -233,16 +246,17 @@ def couple_exploits(net: Network, coupling: float, share_pool: int | None, seed:
 
 def make_instance(family: str, seed: int, n_hosts: int, pool: list[CveRecord], pr_gated: bool = False,
                   cred_levels: int = 0, coupling: float = 0.0, share_pool: int | None = None,
-                  **params) -> Instance:
+                  exposed_level0: bool = False, **params) -> Instance:
     """Topology, CVE assignment, goal and Task, all from one seed (separate rng streams).
 
-    cred_levels, coupling and share_pool are the D15 knobs; at their defaults
+    cred_levels, coupling and share_pool are the D15 knobs, exposed_level0 the
+    D16 variant of the depth knob; at their defaults
     no knob rng is drawn and the Task is the one built without them.
     """
     net = generate(family, seed, n_hosts, **params)
     cves = assign_cves(net, pool, seed)
     target = choose_target(net, seed)
-    levels = assign_levels(net, target, cred_levels, seed) if cred_levels else None
+    levels = assign_levels(net, target, cred_levels, seed, exposed_level0) if cred_levels else None
     coupled, unchanged = couple_exploits(net, coupling, share_pool, seed) if coupling else (None, 0)
     task = build_task(net, cves, target, pr_gated, levels, coupled)
     return Instance(net, cves, target, task, levels, coupled, unchanged)

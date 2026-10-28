@@ -143,3 +143,100 @@ def test_oracle_matches_search_on_every_state(family, n, knob_id, _):
             assert astar(t, HEURISTICS["hmax"], start=s).cost == hstar
             for name in ADMISSIBLE:
                 assert HEURISTICS[name](t, s) <= hstar, (name, s)
+
+
+# --- D16: exposed_level0 -------------------------------------------------------------
+
+GOLDEN_D15 = json.loads(golden.GOLDEN_D15.read_text())["digests"]
+D15_PILOT = golden.ROOT / "results/landscape/depth_coupling_sweep/pilot/2026-10-28T121824Z-5fb8df9/raw.json"
+
+
+@pytest.mark.parametrize("cell", golden.D15_CELLS, ids=lambda c: golden.d15_key(*c[:1], *c[3:], "s"))
+def test_d15_mode_unchanged_by_d16(cell):
+    """exposed_level0 off (implicit or explicit) reproduces the D15 pilot's instances exactly."""
+    v, f, p, n, D, rho, m = cell
+    for s in golden.D15_SEEDS:
+        want = GOLDEN_D15[golden.d15_key(v, n, D, rho, m, s)]
+        assert golden.d15_digest(f, p, n, D, rho, m, s, POOL) == want
+        assert golden.d15_digest(f, p, n, D, rho, m, s, POOL, exposed_level0=False) == want
+    # ... and matches what the pilot itself recorded for seed 0 of this cell.
+    pilot = json.loads(D15_PILOT.read_text())["instances"]
+    (rec,) = [r for r in pilot if not r["pr_gated"] and (r["variant"], r["n"], r["D"], r["rho"], r["m"], r["seed"])
+              == (v, n, D, rho, m, 0)]
+    try:
+        inst = make_instance(f, 0, n, POOL, cred_levels=D, coupling=rho, share_pool=m, **p)
+    except UnreachableGoal:
+        assert rec["status"] == "unreachable"
+        return
+    assert rec["status"] == "ok"
+    assert (rec["facts"], rec["actions"]) == (len(inst.task.facts), len(inst.task.actions))
+    assert rec["structure"]["coupled_exploits"] == len(inst.coupled or {})
+
+
+def exposed_hosts(net):
+    return {net.services[r.service].host for r in net.reach if r.src == INTERNET}
+
+
+@pytest.mark.parametrize("family,params", [("flat", {}), ("tiered", {}), ("tiered", {"n_tiers": 5}),
+                                           ("hub_and_spoke", {})])
+@pytest.mark.parametrize("D", [1, 2, 3])
+def test_d16_semantics(family, params, D):
+    seen = 0
+    for seed in range(30):
+        try:
+            inst = make_instance(family, seed, 12, POOL, cred_levels=D, exposed_level0=True, **params)
+        except (UnreachableGoal, KnobInfeasible):
+            continue
+        seen += 1
+        lv, net = inst.levels, inst.network
+        exp = exposed_hosts(net)
+        assert all(lv[h] == 0 for h in exp) and inst.target not in exp
+        assert lv[inst.target] == D and set(lv.values()) == set(range(D + 1))
+        assert set(lv) == {h.id for h in net.hosts[1:]}
+        # exposed hosts are never credential-gated: their exploits keep D15's preconditions
+        for a in inst.task.actions[:len(net.reach)]:
+            if a.add[0] in exp:
+                assert not any(f >= len(net.hosts) for f in a.pre)
+    assert seen >= 3, f"too few feasible reachable instances to test ({seen})"
+
+
+def test_d16_exposed_target_is_a_knob_failure():
+    # The target is a deepest host, so it is exposed only when every host is one hop from the internet.
+    for seed in range(200):
+        base = make_instance("flat", seed, 2, POOL)
+        if base.target in exposed_hosts(base.network):
+            with pytest.raises(KnobInfeasible):
+                make_instance("flat", seed, 2, POOL, cred_levels=1, exposed_level0=True)
+            return
+    pytest.fail("no flat n=2 seed in 0-199 has an exposed target")
+
+
+D16_KNOBS = [dict(cred_levels=2, exposed_level0=True), dict(cred_levels=3, exposed_level0=True, coupling=0.5),
+             dict(cred_levels=1, exposed_level0=True, coupling=1.0, share_pool=1)]
+
+
+def first_feasible(family, n, k, **knobs):
+    out, seed = [], 0
+    while len(out) < k and seed < 300:
+        try:
+            out.append(make_instance(family, seed, n, POOL, **knobs))
+        except (UnreachableGoal, KnobInfeasible):
+            pass
+        seed += 1
+    assert len(out) == k, f"fewer than {k} feasible reachable {family} n={n} {knobs}"
+    return out
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("n", [6, 8])
+@pytest.mark.parametrize("knob_id", range(len(D16_KNOBS)))
+def test_oracle_matches_search_d16(family, n, knob_id):
+    """Independent oracle = A*+LM-cut = A*+h_max on every reachable state of D16 instances."""
+    for inst in first_feasible(family, n, 2, **D16_KNOBS[knob_id]):
+        t = inst.task
+        for s in reachable_states(t):
+            hstar = optimal_cost(t, s)
+            assert astar(t, HEURISTICS["lmcut"], start=s).cost == hstar
+            assert astar(t, HEURISTICS["hmax"], start=s).cost == hstar
+            for name in ADMISSIBLE:
+                assert HEURISTICS[name](t, s) <= hstar, (name, s)

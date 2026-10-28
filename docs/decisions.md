@@ -1212,3 +1212,64 @@ added at the same time.
   - knob semantics (levels occupied, gates present, coupled k ∉ {src, h});
   - oracle vs search on knob instances at n ≤ 8;
   - search counts unchanged with `trace`.
+
+## 2026-10-28 — D16: Pilot-informed amendment: internet-exposed hosts are level 0
+
+**Status: ADOPTED, 2026-10-28, before either full run of the D15 sweep
+started.** It amends the depth knob of D15 §1(a) as a *new, separately
+flagged variant*. The D15 knob as registered is unchanged and is run as
+registered.
+
+### Rule (`exposed_level0=True`, only meaningful with `cred_levels` ≥ 1)
+
+- **Exposed hosts are level 0.** Every internal host with a reach edge from
+  the internet is forced to level 0.
+- **Remaining hosts.** Levels are assigned only among the other internal
+  hosts, the non-exposed ones, exactly as D15 does over all hosts:
+  - the target is at level D;
+  - one non-exposed, non-target host is forced to each level 1…D−1;
+  - every other non-exposed host is drawn uniformly from {0, …, D}, the
+    D15 distribution.
+  - Level 0 is always occupied, since repair edges guarantee at least one
+    exposed host (D10).
+- **Generation failures (`KnobInfeasible`).** Each is logged and listed per
+  cell, never dropped:
+  - *Too few hosts:* there are fewer than D − 1 non-exposed, non-target
+    hosts to occupy levels 1…D−1.
+  - *Exposed target:* the target itself is internet-exposed, so it would be
+    forced to level 0 and the chain could not end at it.
+- **Same rng stream.** It uses D15's stream `"depth:family:seed"`. Because
+  it is a different variant, its draws are not comparable host by host with
+  D15's, and that is not required.
+
+### Security grounding
+
+In AD-style tiering, internet-facing and DMZ hosts sit outside the
+credential tiers. They are exposed precisely because they are meant to be
+reachable, and no tiered administrator credential is required to attack
+their services. The tiers protect the internal estate behind them.
+
+### Honesty note
+
+- **Pilot information was used.** The amendment was made after seeing the
+  D15 pilot's reachability counts: 133 of 152 unreachable D ≥ 1 instances
+  had every exposed host gated.
+- **No result information was used.** The amendment was made before any
+  full-run result. Pilot R was 1.0–1.4 in every cell, so no outcome
+  information motivated it.
+
+### What does not change
+
+- **The success criterion** of D15 §6 applies to both runs separately:
+  R ≥ 5, the censoring rule, eligibility, and fresh-seed confirmation.
+- **Coupling** (D15 §1(c)) is unchanged. Its unreachability comes from real
+  dependency cycles: host k is reachable only through h, while h's exploit
+  needs k. That is a structural property of the networks the knob
+  describes, not an artefact of an implausible gate.
+
+### Which run the hard-regime decision rests on
+
+- **The amended run (D15+D16) is primary.**
+- **The original D15 run** is reported in full next to it.
+- **A hard regime that appears only in the original run** is reported but
+  not claimed.

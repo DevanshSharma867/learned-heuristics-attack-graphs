@@ -39,8 +39,14 @@ class SearchResult:
 
 
 def best_first_search(task: Task, h, *, w_g=1.0, w_h=1.0, start: State | None = None,
-                      max_expansions: int | None = None) -> SearchResult:
-    """h(task, state) -> estimated remaining cost (INF means dead end)."""
+                      max_expansions: int | None = None, trace: list[State] | None = None) -> SearchResult:
+    """h(task, state) -> estimated remaining cost (INF means dead end).
+
+    trace: if given, every expanded state is appended to it in expansion
+    order, at the point where it is counted, so len(trace) == expanded. A
+    reopened state appears once per expansion. Tracing only observes: it
+    never changes the order, the counts or the result.
+    """
     t0 = time.perf_counter()
     s0 = task.init if start is None else start
     h_cache = {s0: h(task, s0)}
@@ -69,6 +75,8 @@ def best_first_search(task: Task, h, *, w_g=1.0, w_h=1.0, start: State | None = 
             return result(None, INF, budget_hit=True)
         closed[s] = g
         expanded += 1
+        if trace is not None:
+            trace.append(s)
         for ai, s2 in task.successors(s):
             g2 = g + task.actions[ai].cost
             generated += 1

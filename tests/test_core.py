@@ -84,3 +84,23 @@ def test_budget():
     t = toy_network()
     r = uniform_cost(t, max_expansions=1)
     assert r.budget_hit and not r.solved
+
+
+@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("name", sorted(HEURISTICS))
+@pytest.mark.parametrize("algo", ["astar", "wastar", "gbfs"])
+def test_trace_does_not_change_search(seed, name, algo):
+    """trace= only observes: plan, cost and every count are identical with and without it."""
+    t = random_task(seed)
+    h = HEURISTICS[name]
+    run = {"astar": lambda **kw: astar(t, h, **kw), "wastar": lambda **kw: weighted_astar(t, h, 2.0, **kw),
+           "gbfs": lambda **kw: gbfs(t, h, **kw)}[algo]
+    for budget in (None, 3):
+        plain = run(max_expansions=budget)
+        trace = []
+        traced = run(max_expansions=budget, trace=trace)
+        fields = ("plan", "cost", "expanded", "generated", "evaluations", "budget_hit")
+        assert [getattr(plain, f) for f in fields] == [getattr(traced, f) for f in fields]
+        assert len(trace) == traced.expanded
+        assert not trace or trace[0] == t.init
+        assert not any(t.is_goal(s) for s in trace)  # D6: the goal is never counted as expanded

@@ -22,7 +22,7 @@ h* is computed by A* + LM-cut and cross-checked against A* + h_max. Both are
 admissible, so the two optimal costs must be equal. A mismatch, or an
 admissible heuristic exceeding h*, aborts the run before anything is written.
 In the small run, the enumeration computes h* a third, independent way and
-must agree with A* on every sampled state.
+must agree with A* on every sampled state. The helpers live in ahg.measure.
 
 The output goes through ahg.runlog into results/landscape/<run>/ as raw.json,
 report.md (rendered from raw.json by render()) and provenance.json.
@@ -36,9 +36,9 @@ from pathlib import Path
 
 from ahg.attack_graph import UnreachableGoal, make_instance
 from ahg.cve import load_table
-from ahg.heuristics import hmax, lmcut
+from ahg.measure import HardFailure, check_admissible, enumerate_exact, exact_cost, gap_stats, sample_states
 from ahg.runlog import write_run
-from ahg.search import INF, astar, uniform_cost
+from ahg.search import INF, uniform_cost
 from ahg.topology import GENERATORS
 
 BUDGET = 200_000  # max expansions per search
@@ -52,92 +52,6 @@ RUNS = {
 }
 
 
-class HardFailure(Exception):
-    pass
-
-
-def exact_cost(task, start):
-    """h*(start) by A*+LM-cut, cross-checked by A*+h_max. None if a search hit the budget."""
-    r_lm = astar(task, lmcut, start=start, max_expansions=BUDGET)
-    r_hm = astar(task, hmax, start=start, max_expansions=BUDGET)
-    if r_lm.budget_hit or r_hm.budget_hit:
-        # Not silently dropped: the caller counts it as "h* unknown".
-        return None, r_lm, r_hm
-    if r_lm.cost != r_hm.cost:
-        raise HardFailure(f"A*+LM-cut {r_lm.cost} != A*+h_max {r_hm.cost} from state {start:#x}")
-    if r_lm.cost == INF:
-        # Delete-free with a reachable goal: every reachable state reaches it (D14 §1).
-        raise HardFailure(f"reachable state {start:#x} cannot reach the goal")
-    return r_lm.cost, r_lm, r_hm
-
-
-def check_admissible(task, s, hstar):
-    vals = (hmax(task, s), lmcut(task, s))
-    for name, v in zip(("h_max", "LM-cut"), vals):
-        if v > hstar:
-            raise HardFailure(f"{name}={v} > h*={hstar} at state {s:#x}")
-    return vals
-
-
-def sample_states(task, rng):
-    """Distinct reachable non-goal states from random-depth walks (D14 §2 off-optimal rollouts).
-
-    Each walk applies uniformly chosen applicable, useful actions from the
-    initial state for a uniformly drawn number of steps in [1, max depth],
-    where max depth = facts not held initially (each useful action adds at
-    least one fact). The walk stops early at a goal or dead end; goal states
-    are skipped. Returns (states, cap_bound): cap_bound is True if SAMPLE_CAP
-    was reached, False if the walk budget ran out first (few distinct states).
-    """
-    max_depth = len(task.facts) - bin(task.init).count("1")
-    seen = set()
-    for _ in range(SAMPLE_CAP * WALKS_PER_SAMPLE):
-        s = task.init
-        for _ in range(rng.randint(1, max_depth)):
-            succ = [s2 for _, s2 in task.successors(s)]
-            if not succ or task.is_goal(s):
-                break
-            s = rng.choice(succ)
-        if s != task.init and not task.is_goal(s):
-            seen.add(s)
-            if len(seen) == SAMPLE_CAP:
-                return sorted(seen), True
-    return sorted(seen), False
-
-
-def enumerate_exact(task):
-    """h* of every reachable state by backward induction; None if more than ENUM_CAP states.
-
-    Independent of A*: states of a delete-free task form a DAG (every useful
-    action strictly grows the state), so processing states from most facts to
-    fewest gives h*(s) = min over successors s' of c(a) + h*(s').
-    """
-    seen, stack = {task.init}, [task.init]
-    while stack:
-        for _, s2 in task.successors(stack.pop()):
-            if s2 not in seen:
-                if len(seen) >= ENUM_CAP:
-                    return None
-                seen.add(s2)
-                stack.append(s2)
-    hstar = {}
-    for s in sorted(seen, key=lambda s: -bin(s).count("1")):
-        if task.is_goal(s):
-            hstar[s] = 0
-            continue
-        hstar[s] = min((task.actions[ai].cost + hstar[s2] for ai, s2 in task.successors(s)), default=INF)
-    return hstar
-
-
-def gap_stats(triples):
-    """triples: (h*, h_max, LM-cut). Per heuristic: count with h < h*, sum and max of h* - h."""
-    out = {"n": len(triples)}
-    for i, name in ((1, "hmax"), (2, "lmcut")):
-        gaps = [t[0] - t[i] for t in triples]
-        out[name] = {"lt": sum(g > 0 for g in gaps), "gap_sum": sum(gaps), "gap_max": max(gaps, default=0)}
-    return out
-
-
 def measure_instance(family, seed, n, pool, do_enum):
     try:
         task = make_instance(family, seed, n, pool, pr_gated=True).task
@@ -147,7 +61,7 @@ def measure_instance(family, seed, n, pool, do_enum):
     rec = {"family": family, "n": n, "seed": seed, "status": "ok",
            "facts": len(task.facts), "actions": len(task.actions)}
 
-    hstar0, r_lm, r_hm = exact_cost(task, task.init)
+    hstar0, r_lm, r_hm = exact_cost(task, task.init, BUDGET)
     r_h0 = uniform_cost(task, max_expansions=BUDGET)
     rec["init"] = {
         "hstar": hstar0,
@@ -159,11 +73,11 @@ def measure_instance(family, seed, n, pool, do_enum):
         raise HardFailure(f"{family} n={n} seed={seed}: UCS {r_h0.cost} != h* {hstar0}")
 
     rng = random.Random(f"landscape:{family}:{n}:{seed}")
-    states, cap_bound = sample_states(task, rng)
-    exact = enumerate_exact(task) if do_enum else None
+    states, cap_bound = sample_states(task, rng, SAMPLE_CAP, WALKS_PER_SAMPLE)
+    exact = enumerate_exact(task, ENUM_CAP) if do_enum else None
     triples, unknown = [], 0
     for s in states:
-        hs, _, _ = exact_cost(task, s)
+        hs, _, _ = exact_cost(task, s, BUDGET)
         if hs is None:
             unknown += 1
             continue

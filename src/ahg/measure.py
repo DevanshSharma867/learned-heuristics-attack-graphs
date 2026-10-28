@@ -15,10 +15,14 @@ class HardFailure(Exception):
     pass
 
 
-def exact_cost(task, start, budget):
-    """h*(start) by A*+LM-cut, cross-checked by A*+h_max. None if a search hit the budget."""
-    r_lm = astar(task, lmcut, start=start, max_expansions=budget)
-    r_hm = astar(task, hmax, start=start, max_expansions=budget)
+def exact_cost(task, start, budget, traces=None):
+    """h*(start) by A*+LM-cut, cross-checked by A*+h_max. None if a search hit the budget.
+
+    traces: optional (lmcut_list, hmax_list) receiving each search's expanded states.
+    """
+    t_lm, t_hm = traces if traces is not None else (None, None)
+    r_lm = astar(task, lmcut, start=start, max_expansions=budget, trace=t_lm)
+    r_hm = astar(task, hmax, start=start, max_expansions=budget, trace=t_hm)
     if r_lm.budget_hit or r_hm.budget_hit:
         # Not silently dropped: the caller counts it as "h* unknown".
         return None, r_lm, r_hm

@@ -7,7 +7,9 @@ hardware). These are tracked in git, unlike results/raw/. A run directory
 that already exists is never overwritten, so earlier runs stay as they were.
 """
 
+import importlib.metadata
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -22,13 +24,39 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
 
 
-def provenance(seeds: list[int], config: dict) -> dict:
-    """The stamp CLAUDE.md rule 9 asks for. dirty=True means the numbers may not match the commit.
+def hardware() -> dict:
+    """CPU model, core counts and RAM (CLAUDE.md rule 9), on macOS or Linux; None where unknown.
 
-    The package has no runtime dependencies yet, so the Python version is the
-    only version recorded. TODO: when PyTorch (and PyG) become dependencies,
-    add their versions here BEFORE any run that uses them (CLAUDE.md rule 9).
+    platform.processor() gives only "arm" on Apple silicon, so the CPU model
+    comes from sysctl (macOS) or /proc/cpuinfo (Linux, e.g. the cluster).
     """
+    cpu = ram = physical = None
+    if sys.platform == "darwin":
+        def sysctl(key):
+            r = subprocess.run(["sysctl", "-n", key], capture_output=True, text=True)
+            return r.stdout.strip() if r.returncode == 0 else None
+        cpu, ram, physical = sysctl("machdep.cpu.brand_string"), sysctl("hw.memsize"), sysctl("hw.physicalcpu")
+    elif Path("/proc/cpuinfo").exists():
+        names = [line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
+                 if line.startswith("model name")]
+        cpu = names[0] if names else None
+        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    return {"cpu_model": cpu, "logical_cores": os.cpu_count(),
+            "physical_cores": int(physical) if physical else None,
+            "ram_bytes": int(ram) if ram else None}
+
+
+def library_versions() -> dict[str, str]:
+    """Every distribution installed in the running environment, name -> version.
+
+    Recording the whole environment, not a hand-kept list, means a new
+    dependency (PyTorch, PyG) is stamped from its first run (CLAUDE.md rule 9).
+    """
+    return dict(sorted((d.metadata["Name"], d.version) for d in importlib.metadata.distributions()))
+
+
+def provenance(seeds: list[int], config: dict) -> dict:
+    """The stamp CLAUDE.md rule 9 asks for. dirty=True means the numbers may not match the commit."""
     return {
         "date_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": _git("rev-parse", "HEAD"),
@@ -40,6 +68,8 @@ def provenance(seeds: list[int], config: dict) -> dict:
         "platform": platform.platform(),
         "machine": platform.machine(),
         "processor": platform.processor(),
+        "hardware": hardware(),
+        "libraries": library_versions(),
     }
 
 

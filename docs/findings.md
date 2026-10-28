@@ -12,6 +12,13 @@ Run folders cited below:
 
 Each has `report.md`, `raw.json` and `provenance.json` (commit 4f00c1b,
 `git_dirty: false`). Both were produced by `scripts/measure_landscape.py`.
+
+**Their provenance has no hardware field or library versions.** Both runs
+predate those fields, which were added to `runlog.provenance()` on
+2026-10-28. Their `provenance.json` records only `platform`
+(macOS-15.6-arm64), `machine` (arm64), `processor` and the Python version.
+They are left unedited (rule 11). Later runs record CPU model, core
+counts, RAM and every installed library version.
 Costs are in D9 integer units: 38 units = 1 effort unit, and actions cost
 38–380.
 

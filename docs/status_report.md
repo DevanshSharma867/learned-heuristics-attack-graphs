@@ -297,7 +297,7 @@ Specific checks requested:
 
    This should be measured on real generated attack graphs before the GNN is built.
 2. **h_add and h_FF are upper bounds on h\*** in delete-free tasks (tested: `h* ≤ hff ≤ hadd`). This means GBFS or A* with h_FF is a strong anytime baseline. It also means "inadmissible" here always means overestimating, which shapes the H2 narrative.
-3. **Exact alternatives exist.** Optimal delete-free planning, i.e. computing h+, has dedicated exact methods (hitting-set and MIP-based approaches) `[VERIFY: specific papers and venues not checked in this audit]`. Reviewers may ask why search is used at all. The related-work positioning needs to address this.
+3. **Exact alternatives exist.** Optimal delete-free planning, i.e. computing h+, has dedicated exact methods (hitting-set and MIP-based approaches) (resolved 2026-10-29 in `docs/related_work.md`: Haslum, Slaney & Thiébaux, ICAPS 2012; Pommerening & Helmert, ICAPS 2012; Imai & Fukunaga, JAIR 2015). Reviewers may ask why search is used at all. The related-work positioning needs to address this.
 4. **Random test tasks are not attack-graph-shaped.** All verification so far uses `random_task` and the toy. Admissibility and optimality tests should be re-run on generated attack graphs once they exist.
 
 ### 6.3 Code-level issues and divergences (no bugs found in tested behaviour)

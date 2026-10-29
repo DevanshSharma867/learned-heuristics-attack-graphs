@@ -27,9 +27,18 @@ def test_instance_spec_is_the_seed_and_round_robin():
     assert train.instance_spec(1000) == train.instance_spec(1000)
 
 
+def test_d20_extension_keeps_d19_cells():
+    train = SPLITS["train"]
+    assert len(train.seeds) == 3000 and len(set(train.seeds)) == 3000
+    assert train.index(1599) == 599 and train.index(10000) == 600
+    # the extension continues the round-robin where the D19 range stops
+    assert train.instance_spec(10000)["variant"] == train.cells()[600 % 84]["variant"]
+
+
 def test_seed_outside_split_is_refused():
-    with pytest.raises(ValueError):
-        SPLITS["train"].instance_spec(1700)
+    for seed in (1700, 999, 12400):
+        with pytest.raises(ValueError):
+            SPLITS["train"].instance_spec(seed)
 
 
 def test_each_test_split_changes_one_factor():

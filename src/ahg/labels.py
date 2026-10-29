@@ -25,7 +25,7 @@ from .measure import HardFailure, check_admissible, enumerate_exact, sample_stat
 from .oracle import optimal_cost
 from .runlog import provenance
 from .search import astar
-from .splits import SPLITS, cve_pool
+from .splits import SPLITS, cve_pool, record_test_access
 from .task import Task, task_digest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -167,7 +167,7 @@ def _gz_lines(records) -> bytes:
 
 def write_batch(split_name: str, seeds: list[int], cfg: dict, root: Path | None = None,
                 shard: tuple[int, int] | None = None, tag: str | None = None, workers: int = 1,
-                allow_dirty: bool = False) -> Path:
+                allow_dirty: bool = False, test_log: Path | None = None) -> Path:
     """Label the instances of `seeds` (all in one split) and write one batch; return its directory.
 
     shard: (k, K) for the k-th of K SLURM array shards; tag: e.g. "pilot". Both only name the batch.
@@ -177,9 +177,10 @@ def write_batch(split_name: str, seeds: list[int], cfg: dict, root: Path | None 
     if set(cfg) != CONFIG_KEYS:
         raise ValueError(f"label config keys {sorted(cfg)} != {sorted(CONFIG_KEYS)}")
     split = SPLITS[split_name]
-    bad = [s for s in seeds if s not in split.seeds]
+    members = set(split.seeds)
+    bad = [s for s in seeds if s not in members]
     if bad:
-        raise ValueError(f"seeds {bad} are not in split {split_name} ({split.seeds})")
+        raise ValueError(f"seeds {bad[:10]} are not in split {split_name} ({split.ranges})")
     prov = provenance(list(seeds), cfg)
     if prov["git_dirty"] and not allow_dirty:
         raise RuntimeError("working tree is dirty: commit first, or pass allow_dirty for a throwaway batch")
@@ -189,6 +190,9 @@ def write_batch(split_name: str, seeds: list[int], cfg: dict, root: Path | None 
     out = (root or LABELS) / batch_id
     if out.exists():
         raise FileExistsError(f"{out} exists; label batches are append-only")
+    if split.is_test:
+        # Generating a test batch reads no model and no labels; it is still logged (D19 §1).
+        record_test_access(batch_id, split_name, "label generation", prov["git_commit"], log=test_log)
 
     full_pool = load_table(CVES)
     pool = cve_pool(full_pool, split.pool)

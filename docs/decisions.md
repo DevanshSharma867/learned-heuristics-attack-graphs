@@ -1815,3 +1815,40 @@ directory is never overwritten.
   `cves.csv` SHA-256 does not match.
 - Configs are JSON, under `configs/labels/` (stdlib only; there were no
   configs to follow).
+
+## 2026-10-29 — D20: Larger training split (train seeds extended; val and test unchanged)
+
+**Status: ADOPTED, 2026-10-29, before any model exists.** No model has been
+trained, and no validation or test label has been read by any training
+code. The only labels so far are the D19 pilot batches; they were used for
+sizing.
+
+**Why.**
+- The D19 train range (seeds 1000–1599) gives about 439 labelled instances.
+  27% of seeds are unreachable at D ∈ {2, 3}
+  (`results/feasibility/label_pilot/2026-10-29T122326Z-8755cd5/`).
+- H3 and the in-distribution claim are about *unseen topologies*. A
+  heuristic trained on ~440 graphs may fit topologies, not the domain, so
+  generalisation claims need more topology diversity, not more states per
+  topology.
+- Labels are cheap: 1.24 s per seed in one process in the pilot (unreachable
+  seeds included). So a much larger train split fits well inside a ~2 h
+  local budget.
+
+**Rule.**
+- `train` = seeds **1000–1599 and 10000–12399**, 3,000 seeds: 5× the D19
+  range, about 2,200 labelled instances expected at the pilot's 73%.
+  - The new range sits far from every other split and from the reserved
+    sweep seeds. `tests/test_splits.py` checks disjointness.
+  - The D19 range comes first in the seed list, so every D19 seed keeps
+    its knob cell. The pilot batch still rebuilds with matching task
+    digests.
+  - Expected labelling time: about 3,000 × 1.24 s / 6 workers ≈ 10 min.
+- *Why 5×, not 3× or more:* labelling would allow far more, but training on
+  the M4 then becomes the cost. 5× is the most that keeps the D17 seed plan
+  (5 seeds × primary models plus ablations) plausible locally. That is
+  measured in the training pilot.
+- `val`, `test_id`, `test_size`, `test_structure`, `test_vuln` and
+  `test_vuln_cost` are **exactly as in D19**.
+- Test-split label generation is now itself logged in the test-access log,
+  with purpose `label generation`. It reads no model.

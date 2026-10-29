@@ -31,11 +31,24 @@ COSTLY_MAX_E = 2.8  # heldout_costly: exploitability at most this (D19 §1)
 @dataclass(frozen=True)
 class Split:
     name: str
-    seeds: range
+    ranges: tuple[range, ...]  # disjoint seed ranges; a seed's index runs through them in order
     variants: tuple[str, ...]
     sizes: tuple[int, ...]
     levels: tuple[int, ...] = (2, 3)
     pool: str = "train"
+
+    @property
+    def seeds(self) -> list[int]:
+        return [s for r in self.ranges for s in r]
+
+    def index(self, seed: int) -> int:
+        """Position of a seed in the split's seed list; ValueError if it is not in the split."""
+        offset = 0
+        for r in self.ranges:
+            if seed in r:
+                return offset + seed - r.start
+            offset += len(r)
+        raise ValueError(f"seed {seed} is not in split {self.name}")
 
     @property
     def is_test(self) -> bool:
@@ -47,24 +60,24 @@ class Split:
                 for v in self.variants for n in self.sizes for D in self.levels for rho, m in COUPLINGS]
 
     def instance_spec(self, seed: int) -> dict:
-        """The instance a seed stands for: cells round-robin over the seed range, so no rng is needed."""
-        if seed not in self.seeds:
-            raise ValueError(f"seed {seed} is not in split {self.name}")
+        """The instance a seed stands for: cells round-robin over the seed list, so no rng is needed."""
         cells = self.cells()
-        cell = cells[(seed - self.seeds.start) % len(cells)]
+        cell = cells[self.index(seed) % len(cells)]
         family, params = VARIANTS[cell["variant"]]
         return {"split": self.name, "seed": seed, "family": family, "params": params, **cell,
                 "exposed_level0": True, "pool": self.pool}
 
 
 SPLITS = {s.name: s for s in [
-    Split("train", range(1000, 1600), TRAIN_VARIANTS, (12, 20)),
-    Split("val", range(1600, 1700), TRAIN_VARIANTS, (12, 20)),
-    Split("test_id", range(1700, 1800), TRAIN_VARIANTS, (12, 20)),
-    Split("test_size", range(1800, 1900), TRAIN_VARIANTS, (30,)),
-    Split("test_structure", range(1900, 2000), ("hub_and_spoke",), (12, 20)),
-    Split("test_vuln", range(2000, 2100), TRAIN_VARIANTS, (12, 20), pool="heldout"),
-    Split("test_vuln_cost", range(2100, 2200), TRAIN_VARIANTS, (12, 20), pool="heldout_costly"),
+    # D20: train extended by 10000-12399, decided before any model existed. D19's range is kept
+    # first, so every D19 seed keeps its cell.
+    Split("train", (range(1000, 1600), range(10000, 12400)), TRAIN_VARIANTS, (12, 20)),
+    Split("val", (range(1600, 1700),), TRAIN_VARIANTS, (12, 20)),
+    Split("test_id", (range(1700, 1800),), TRAIN_VARIANTS, (12, 20)),
+    Split("test_size", (range(1800, 1900),), TRAIN_VARIANTS, (30,)),
+    Split("test_structure", (range(1900, 2000),), ("hub_and_spoke",), (12, 20)),
+    Split("test_vuln", (range(2000, 2100),), TRAIN_VARIANTS, (12, 20), pool="heldout"),
+    Split("test_vuln_cost", (range(2100, 2200),), TRAIN_VARIANTS, (12, 20), pool="heldout_costly"),
 ]}
 # Seeds already used for measurement and decisions (D15 sweeps, D17 replication); never in a split.
 RESERVED_SEEDS = (range(0, 20), range(100, 120))

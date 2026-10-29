@@ -93,10 +93,12 @@ def test_loader_refuses_tampered_labels(batches, tmp_path):
 
 
 def test_reading_a_test_split_is_logged(tmp_path):
-    out = write_batch("test_id", [1700], CFG, root=tmp_path / "labels", allow_dirty=True)
     log = tmp_path / "log.jsonl"
+    out = write_batch("test_id", [1700], CFG, root=tmp_path / "labels", allow_dirty=True, test_log=log)
+    (gen,) = [json.loads(line) for line in log.read_text().splitlines()]
+    assert gen["purpose"] == "label generation"
     with pytest.raises(PermissionError):
         open_batch(out, log=log)
     open_batch(out, purpose="pipeline test", log=log)
-    (entry,) = [json.loads(line) for line in log.read_text().splitlines()]
-    assert entry["split"] == "test_id" and entry["batch_id"] == out.name
+    entry = [json.loads(line) for line in log.read_text().splitlines()][-1]
+    assert entry["split"] == "test_id" and entry["batch_id"] == out.name and entry["purpose"] == "pipeline test"

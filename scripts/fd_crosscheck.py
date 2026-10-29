@@ -58,7 +58,7 @@ PARAMS = {"flat": {}, "hub_and_spoke": {}, "tiered3": {}, "tiered5": {"n_tiers":
 
 def fd(sas, search):
     out = subprocess.run([sys.executable, str(FD), str(sas), "--search", search],
-                         capture_output=True, text=True, check=False).stdout
+                         capture_output=True, text=True, check=False, cwd=sas.parent).stdout  # FD writes sas_plan to cwd
     grab = lambda pat, f=float: (lambda m: f(m.group(1)) if m else None)(re.search(pat, out))
     return {"h0": grab(r"Initial heuristic value for \w+: (\d+)", int), "cost": grab(r"Plan cost: (\d+)", int),
             "evaluations": grab(r"Evaluations: (\d+)", int), "expanded": grab(r"Expanded (\d+) state", int),

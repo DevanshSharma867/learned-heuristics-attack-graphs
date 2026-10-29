@@ -170,6 +170,36 @@ def timing_table(runs):
     print()
 
 
+def extras_table(runs):
+    print("### Instance-level facts cited in findings.md\n")
+    for name, (_, recs) in runs.items():
+        ok = [r for r in recs if r["status"] == "ok"]
+        print(f"**{name}**\n")
+        hits = {h: sum(r["init"]["budget_hit"][h] for r in ok) for h in ("h0", "hmax", "lmcut")}
+        print(f"- init searches at budget: {hits}")
+        print(f"- reachable instances with R ≥ 2: {sum(r_of(r) >= 2 for r in ok)}; R ≥ 5: "
+              f"{sum(r_of(r) >= 5 for r in ok)}; of {len(ok)}")
+        top = max(ok, key=r_of)
+        print(f"- max R: {top['cell']} seed={top['seed']}: R = {fmt(r_of(top))}, R_hmax = {fmt(rh_of(top))}, "
+              f"expanded {top['init']['expanded']}, plan length {top['effort']['plan_len_lmcut']}, "
+              f"seconds {top['effort']['seconds']}")
+        for D in dc.LEVELS:
+            big = [r for r in recs if r["D"] == D and r["n"] >= 12]
+            g = [r for r in big if r["status"] == "ok"]
+            print(f"- D={D}, n ≥ 12: reachable {len(g)}/{len(big)}; median plan length "
+                  f"{statistics.median(r['effort']['plan_len_lmcut'] for r in g):g}; median credential chain "
+                  f"{statistics.median(r['effort']['cred_chain_len'] for r in g):g}")
+        for v in sorted({r["variant"] for r in recs}):
+            per = [[r["status"] == "ok" for r in recs if r["variant"] == v and r["n"] == 20 and r["D"] == D]
+                   for D in dc.LEVELS]
+            print(f"- {v} n=20 reachable by D: {' / '.join(f'{sum(g)}/{len(g)}' for g in per)}")
+        fails = defaultdict(int)
+        for r in recs:
+            if r["status"] == "generation_failure":
+                fails[f"{r['variant']} n={r['n']} D={r['D']}"] += 1
+        print(f"- generation failures: {dict(fails) or 0}\n")
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -189,6 +219,7 @@ def main():
     for name, (_, recs) in runs.items():
         interaction_table(name, recs)
     timing_table(runs)
+    extras_table(runs)
 
 
 if __name__ == "__main__":

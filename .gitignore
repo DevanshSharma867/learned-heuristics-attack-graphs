@@ -14,4 +14,5 @@ results/raw/*
 !results/raw/.gitkeep
 # Measurement runs (raw.json, report.md, provenance.json) are tracked.
 !results/landscape/
+!results/feasibility/
 docs/ai_usage_log.md

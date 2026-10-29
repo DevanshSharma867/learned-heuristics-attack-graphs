@@ -14,6 +14,11 @@ Treat the repo as a research artifact, not a coursework submission — code, exp
 
 If the paper and the course ever pull apart, the paper standard wins. Any course requirement it would drop is named in `docs/decisions.md`.
 
+**Paper framing (D17, adopted 2026-10-29).** Working title: *"Learned heuristics for attack-graph planning: what they can and cannot buy"*.
+- **Contribution 2 (learning: informedness and generalisation under shift) is the headline.** It tests H1–H3 below, against the thresholds fixed in D17 §2.
+- **Contribution 1 (characterisation) is the motivating study.** It covers near-exact classical A\* on these graphs, h\* = h+ (delete-free), and the walk-vs-A\* sampling bias.
+- **The timing result against Fast Downward is a pre-registered negative.** It is reported prominently, not buried.
+
 Author/maintainer: Devansh Sharma (solo). Repo: https://github.com/DevanshSharma867/learned-heuristics-attack-graphs
 
 **Research question.** Compared with A* using classical heuristics, can a neural cost-to-go estimator trained on some attack graphs reduce search effort on attack graphs from *unseen* network topologies, and how much solution quality does it cost?

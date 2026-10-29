@@ -2,6 +2,7 @@
 
 Usage: python scripts/measure_depth_coupling.py pilot|full [--d16] [--workers N]
        python scripts/measure_depth_coupling.py confirm --cells "KEY;KEY" [--d16] [--workers N]
+       python scripts/measure_depth_coupling.py replicate --d16 [--workers N]
 
   pilot  seed 0 of every grid cell, plus the anchor cells (D12 + pr_gated,
          knobs off, n in {8, 12}) on seeds 0-19. The anchors must reproduce
@@ -10,6 +11,9 @@ Usage: python scripts/measure_depth_coupling.py pilot|full [--d16] [--workers N]
   full   seeds 0-19 of every grid cell -> results/landscape/depth_coupling_sweep/full/.
   confirm  the D15 §6 fresh-seed confirmation: the named cells (keys as in
          report.md) on seeds 100-119 -> .../depth_coupling_sweep/confirm/.
+  replicate  the D17 §1 fresh-seed replication of C1: every grid cell on
+         seeds 100-119 -> .../depth_coupling_sweep/replicate/ (R1-R3 of D17
+         are then read off by summarize_depth_coupling.py).
   --d16  the D16 variant of the depth knob (internet-exposed hosts at level 0);
          run names get a "_d16" suffix. Anchor cells have D = 0, so D16 does
          not touch them.
@@ -360,7 +364,7 @@ def render(raw):
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("pilot", "full", "confirm"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("pilot", "full", "confirm", "replicate"):
         sys.exit(__doc__)
     mode, d16 = sys.argv[1], "--d16" in sys.argv
     workers = int(sys.argv[sys.argv.index("--workers") + 1]) if "--workers" in sys.argv else 6
@@ -373,7 +377,8 @@ def main():
             sys.exit(f"unknown cells: {missing}")
         jobs = [(by_key[k], s) for k in wanted for s in CONFIRM_SEEDS]
     else:
-        jobs = [(c, s) for c in grid for s in ([0] if mode == "pilot" else SEEDS)]
+        seeds = {"pilot": [0], "full": SEEDS, "replicate": CONFIRM_SEEDS}[mode]
+        jobs = [(c, s) for c in grid for s in seeds]
     if mode == "pilot":
         jobs += [(c, s) for c in anchor_cells() for s in SEEDS]
     jobs = [(i, c, s) for i, (c, s) in enumerate(jobs)]
@@ -385,10 +390,10 @@ def main():
             print(f"[{done}/{len(jobs)} {time.perf_counter() - t0:7.0f}s] {rec['cell']} seed={rec['seed']} "
                   f"{rec['status']} {rec.get('seconds', 0):.2f}s", flush=True)
     config = {"name": f"depth_coupling_sweep/{mode}" + ("_d16" if d16 else ""), "mode": mode,
-              "decision": "D15+D16" if d16 else "D15", "exposed_level0": d16, "workers": workers,
+              "decision": ("D15+D16" if d16 else "D15") + (" replication" if mode == "replicate" else ""), "exposed_level0": d16, "workers": workers,
               "cells": wanted if mode == "confirm" else None,
               "levels": LEVELS, "couplings": COUPLINGS, "variants": VARIANTS, "sizes": SIZES,
-              "seeds_per_cell": 1 if mode == "pilot" else len(CONFIRM_SEEDS if mode == "confirm" else SEEDS),
+              "seeds_per_cell": 1 if mode == "pilot" else len(CONFIRM_SEEDS if mode in ("confirm", "replicate") else SEEDS),
               "anchor": {"sizes": ANCHOR_SIZES, "seeds": list(SEEDS)} if mode == "pilot" else None,
               "budget": BUDGET, "state_budget": STATE_BUDGET, "label_budget": LABEL_BUDGET,
               "sample_cap": SAMPLE_CAP, "walks_per_sample": WALKS_PER_SAMPLE, "expanded_cap": EXPANDED_CAP,

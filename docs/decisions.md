@@ -1276,15 +1276,35 @@ their services. The tiers protect the internal estate behind them.
 
 ## 2026-10-29 — D17: Paper plan after the depth–coupling sweeps
 
-**Status: PROPOSED, not adopted.**
+**Status: ADOPTED, 2026-10-29, by the author, with the amendments below.**
 
-- Nothing here changes CLAUDE.md §0's research question or hypotheses, the
-  paper direction in `findings.md` §6, or any earlier decision.
-- Adopting needs a status change by the author. The hypotheses in §0 are then
-  revised to the text in §3 below, with the reason recorded here.
+- The research question and the wording of H1–H3 in CLAUDE.md §0 are
+  unchanged. §2 below adds the thresholds and tests they are judged by.
+  CLAUDE.md §0 now states the paper framing and points here.
 - This version replaces the options draft committed at b57b0c8. The target is
   now a workshop paper or arXiv preprint (CLAUDE.md §0, 2026-10-29), so the
   plan is shaped as one paper with two contributions.
+
+**Amendments made at adoption (2026-10-29, before any training or label run):**
+
+1. **Paper framing.** Working title: *"Learned heuristics for attack-graph
+   planning: what they can and cannot buy"*.
+   - **Contribution 2 (learning: informedness and generalisation under
+     shift) is the headline.**
+   - Contribution 1 (characterisation, including h\* = h+ and the sampling
+     bias) is the motivating study that sets up C2.
+   - The timing result against Fast Downward is a **pre-registered
+     negative** (§2, H1). It is reported prominently, in the abstract and
+     in its own results subsection, not buried in a limitations paragraph.
+2. **Threats to validity / reviewer questions:** §8 is rewritten as that
+   subsection.
+3. **Fallback order (§6):** the WL-feature (WL-GOOSE-style) baseline moves
+   from optional to planned, and is kept until last because reviewers
+   expect it.
+4. **Replication criteria for C1 (§1, Remaining C1 work (a)):** fixed here,
+   before the replication runs.
+5. **Sampling scheme:** the D14 update that implements §3 is recorded as
+   D19.
 
 ### Inputs (run folders)
 
@@ -1347,6 +1367,23 @@ test):
 - (a) The fresh-seed replication pre-registered as (b) H1 in the earlier
   draft: the D16 grid on seeds 100–119, D15 §6 applied unchanged. It takes
   about 70 min locally ([F16] took 66 min).
+
+  **Replication criteria (fixed at adoption, before the run).** C1 has
+  *replicated* only if all three hold on the seeds 100–119 run; otherwise
+  it has *not replicated*, and `findings.md` says which part failed.
+  - **(R1) No hard regime.** No eligible cell meets D15 §6 condition 1
+    (median R ≥ 5 with bootstrap CI lower bound ≥ 3), with eligibility and
+    censoring exactly as in D15 §6. [F16]: 0 of 192.
+  - **(R2) h_max sampling bias.** In the n = 20, D ≥ 2 group, the
+    h_max per-instance sign test (expanded-state h < h\* rate against the
+    walk-state rate) has more "higher" than "lower" instances, with exact
+    two-sided p < 0.01. [F16]: 735 / 100, p = 3.3e-120.
+  - **(R3) LM-cut sampling bias.** The same test for LM-cut in the same
+    group: more "higher" than "lower", p < 0.01. [F16]: 292 / 150,
+    p = 1.3e-11.
+
+  The other per-group rows (all D, D = 0, 1, …) are reported but carry no
+  criterion.
 - (b) The `findings.md` §7.5 limitation, that levels are independent of
   position, stays a stated limitation. No new generator variant is added
   before the deadline.
@@ -1431,9 +1468,11 @@ separately with one factor changed.
 - GNN depth and width (64×3, 128×6);
 - with vs without CVSS features.
 
-**A reviewer-proofing baseline from [RW] (optional; recommended):** WL
-features with linear or GP regression (WL-GOOSE style), on the grounds that
-it is cheaper than a GNN.
+**A reviewer-proofing baseline from [RW] (planned, amendment 3):** WL
+features with linear or GP regression (WL-GOOSE style; Chen, Trevizan &
+Thiébaux, ICAPS 2024), on the grounds that it is cheaper than a GNN. It is
+trained on the same label batches and reported against the same H1–H3
+thresholds as the GNN, with 5 seeds where training is stochastic.
 
 ### 3. Training distribution and sampling scheme
 
@@ -1528,20 +1567,29 @@ The preprint is then revised for the primary workshop target. Today is
 |---|---|---|
 | 0 | 29 Oct – 1 Nov | Adopt D17; commit §2 thresholds and split seed ranges; request an arXiv endorsement (cs.AI; needed for first submissions); HPC account and environment check |
 | 1 | 2 – 6 Nov | D14 label pipeline with the `astar` source; label-check tests (rule 6); split-disjointness test; batched successor evaluation in `search.py`; C1 fresh-seed replication run |
-| 2 | 9 – 13 Nov | Label generation on HPC (train, validation, all test splits); GNN and MLP training code; local pilot training |
+| 2 | 9 – 13 Nov | Label generation on HPC (train, validation, all test splits); GNN, MLP and WL-baseline training code; local pilot training |
 | 3 | 16 – 20 Nov | Multi-seed training on HPC (primary 5 seeds, ablations 3); validation-only model selection; freeze models |
 | 4 | 23 – 27 Nov | Evaluation harness with the test-access log; in-distribution test run **once**; timing against Python and FD locally |
 | 5 | 30 Nov – 4 Dec | Shift tests **once** each (size, structure, vulnerability); statistics, figures, failure analysis |
 | 6 | 7 – 11 Dec | Full paper draft (C1 + C2); course report, demo, viva |
 | 7 | 14 – 18 Dec | Polish; reproducibility command; **arXiv submission** |
 
-**Fallback if the plan slips** (each step keeps a complete paper):
+**Fallback if the plan slips** (amendment 3; each step keeps a complete
+paper; items are dropped in this order):
 
-1. Drop the WL baseline and the CVSS ablation.
-2. Drop the vulnerability shift, then the structure shift.
-3. If training slips past week 4, post C1 alone, with the feasibility and
+1. Drop the vulnerability shift.
+2. Drop the structure shift.
+3. Drop the extra cheap comparisons: the CVSS-feature ablation, the GNN
+   128×6 width ablation and the walk-only-labels ablation. The MLP stays
+   (it is the course's secondary tier and the proposal's promise).
+4. If training slips past week 4, post C1 alone, with the feasibility and
    break-even results, as the arXiv v1 in week 7. The learning results then
    go to v2 and the workshop version.
+
+The WL baseline is never dropped on its own. Reviewers will ask "why a GNN
+and not WL features" ([RW]), so it goes only with step 4. The size shift is
+kept to the end too: it needs no new generator code, and [N30] shows it is
+feasible.
 
 C1 is already measured, so no slip leaves the paper empty.
 
@@ -1568,18 +1616,55 @@ C1 is already measured, so no slip leaves the paper empty.
 20 November 2026; 5–9 pages AAAI; non-archival). Planning and attack graphs
 are not among its listed topics, and by 20 November only C1 would be ready.
 
-### 8. Main threats a reviewer will raise
+### 8. Threats to validity / reviewer questions (amendment 2)
 
-- C1 is predicted by h+ = h\* plus LM-cut ≈ h+ ([RW]), so its value rests on
-  the measurement and its consequences, not on surprise.
-- Synthetic topologies and an uncalibrated cost model (rule 5).
-- The time comparison: Python heuristics against compiled FD. Both are
-  reported. The prediction is that FD wins.
-- No exact delete-free solver baseline ([RW]).
-- Levels are independent of position (`findings.md` §7.5).
-- Full observability is assumed.
+Each item becomes a paragraph of the paper's threats section, with the
+answer given here.
 
-### Recommendation (separate from the plan)
+- **"Near-exactness is expected: h\* = h+."** Privileges are monotonic, so
+  every task is delete-free and its optimal cost *is* the delete-relaxation
+  optimum h+. Helmert & Domshlak (ICAPS 2009) show experimentally that
+  LM-cut "gives excellent approximations to h+".
+  - *Answer:* C1 does not claim surprise. It claims the measurement on
+    CVE-grounded attack graphs under pre-registered depth and coupling
+    knobs, and its consequences: A\* expansions at about plan length, the
+    per-instance sampling bias, and the inference-cost bound. The paper
+    cites Helmert & Domshlak where C1 is introduced, not in related work
+    only.
+- **"Why A\* at all, when exact h+ solvers exist?"** Optimal delete-free
+  planning has dedicated exact methods:
+  - minimal-landmark hitting sets (Haslum, Slaney & Thiébaux, ICAPS 2012);
+  - an integer-programming model (Imai & Fukunaga, JAIR 2015);
+  - branch and bound with incremental LM-cut (Pommerening & Helmert,
+    ICAPS 2012).
+  - *Answer:* the question is about learned heuristics, which are defined
+    and compared inside A\* and GBFS (STRIPS-HGN, GOOSE, WL-GOOSE [RW]).
+    Those solvers are named as a stronger exact baseline that we do not
+    run, and the paper states that this weakens any claim that A\* is the
+    right tool for these tasks. It does not weaken the H1–H3 comparison,
+    which is A\* against A\*.
+- **Synthetic topologies.** Networks come from three generator families
+  (D10), not from real enterprise networks. Structure shift (H3b) measures
+  sensitivity to the family, but not distance from reality. MulVAL
+  validation stays optional (CLAUDE.md §0). The topology generator and its
+  parameters are published with the code.
+- **The cost model is a proxy.** c(a) = 1 + 9·(1 − x_a) is an attack-effort
+  proxy from the CVSS exploitability sub-score (rule 5), not a calibrated
+  probability or time. "Optimal" always means optimal under this model.
+  Plan-cost ratios (H2) inherit this. The vulnerability shift tests
+  sensitivity to the CVSS distribution, not the validity of the proxy.
+- **The time comparison.** Python heuristics run against compiled Fast
+  Downward. Both are reported, and the FD loss is pre-registered (§2, H1).
+- **Levels are independent of position** (`findings.md` §7.5). This is a
+  stated limitation of the depth knob.
+- **Full observability** of the network and its vulnerabilities is assumed,
+  as in MulVAL-style attack-graph analysis. The contingent-planning view
+  (Shmaryahu et al. 2018) is out of scope.
+- **The label-size limit.** Training instances are capped by what the exact
+  solver labels in budget (D14 §3). The size shift (n = 30) is the only
+  test above it.
+
+### Recommendation (separate from the plan; written before adoption)
 
 **Adopt D17 as written, with 5 seeds for the primary models.**
 

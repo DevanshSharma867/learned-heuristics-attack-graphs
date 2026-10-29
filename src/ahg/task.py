@@ -10,6 +10,8 @@ is held. Bitmasks are hashable, cheap to copy, and make "are all
 preconditions held?" a single AND.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from functools import cached_property
 
@@ -133,3 +135,10 @@ def plan_cost(task: Task, plan, start: State | None = None) -> int:
     if not task.is_goal(state):
         raise ValueError("plan does not reach the goal")
     return total
+
+
+def task_digest(task: Task) -> str:
+    """SHA-256 over facts, actions (in order: name, pre, add, cost), init and goal."""
+    blob = json.dumps({"facts": task.facts, "actions": [[a.name, a.pre, a.add, a.cost] for a in task.actions],
+                       "init": task.init, "goal": task.goal})
+    return hashlib.sha256(blob.encode()).hexdigest()

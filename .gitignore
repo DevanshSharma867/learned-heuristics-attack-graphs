@@ -15,5 +15,8 @@ results/raw/*
 # Measurement runs (raw.json, report.md, provenance.json) are tracked.
 !results/landscape/
 !results/feasibility/
+# Every read of a test split (D17 §4, D19 §1) is tracked.
+!results/test_access_log.jsonl
 docs/ai_usage_log.md
 third_party/
+logs/

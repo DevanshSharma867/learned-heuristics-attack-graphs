@@ -17,18 +17,12 @@ from pathlib import Path
 
 from ahg.attack_graph import UnreachableGoal, make_instance
 from ahg.cve import load_table
+from ahg.task import task_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "tests" / "data" / "golden_tasks.json"
 FAMILIES = ("flat", "tiered", "hub_and_spoke")
 CASES = [(f, n, s, g) for f in FAMILIES for n in (6, 8, 12, 20) for s in range(10) for g in (False, True)]
-
-
-def task_digest(task) -> str:
-    """SHA-256 over facts, actions (in order: name, pre, add, cost), init and goal."""
-    blob = json.dumps({"facts": task.facts, "actions": [[a.name, a.pre, a.add, a.cost] for a in task.actions],
-                       "init": task.init, "goal": task.goal})
-    return hashlib.sha256(blob.encode()).hexdigest()
 
 
 def case_digest(family, n, seed, pr_gated, pool, **knobs) -> str:

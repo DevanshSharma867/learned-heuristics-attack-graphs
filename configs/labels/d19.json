@@ -1,0 +1,11 @@
+{
+ "walk_cap": 100,
+ "walks_per_sample": 10,
+ "successor_cap": 200,
+ "init_budget": 200000,
+ "state_budget": 20000,
+ "oracle_all_max_n": 12,
+ "oracle_states": 20,
+ "oracle_max_pops": 200000,
+ "enum_cap": 20000
+}

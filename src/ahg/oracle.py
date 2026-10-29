@@ -15,8 +15,12 @@ from .task import Task
 INF = float("inf")
 
 
-def optimal_cost(task: Task, start: int | None = None) -> float:
-    """Cheapest cost from start (default: the initial state) to the goal, INF if unreachable."""
+def optimal_cost(task: Task, start: int | None = None, max_pops: int | None = None) -> float | None:
+    """Cheapest cost from start (default: the initial state) to the goal, INF if unreachable.
+
+    max_pops: stop after this many heap pops and return None (not checked),
+    so a caller can never mistake a budget stop for an answer.
+    """
     bits = task.init if start is None else start
     s0 = frozenset(i for i in range(len(task.facts)) if bits >> i & 1)
     goal = frozenset(task.goal)
@@ -24,7 +28,11 @@ def optimal_cost(task: Task, start: int | None = None) -> float:
     best = {s0: 0}
     tie = itertools.count()  # frozensets are not totally ordered, so never compare them
     heap = [(0, next(tie), s0)]
+    pops = 0
     while heap:
+        if max_pops is not None and pops >= max_pops:
+            return None
+        pops += 1
         g, _, s = heapq.heappop(heap)
         if g > best[s]:
             continue

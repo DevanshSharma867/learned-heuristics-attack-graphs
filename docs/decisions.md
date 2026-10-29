@@ -1852,3 +1852,98 @@ sizing.
   `test_vuln_cost` are **exactly as in D19**.
 - Test-split label generation is now itself logged in the test-access log,
   with purpose `label generation`. It reads no model.
+
+## 2026-10-29 — D21: Models, training protocol, validation harness and the search budget (fixed before training)
+
+**Status: ADOPTED, 2026-10-29,** before any model is trained. Everything
+here is used on `train` and `val` only. No test split is evaluated in this
+phase.
+
+### 1. Models (`src/ahg/learning/models.py`); every h_θ(s) ≥ 0
+
+Every model predicts h\*(s) in effort units (D9 units / 38) through a
+softplus output (or a clamp at 0 for the WL model). Search uses it × 38.
+
+- **MLP:** the CLAUDE.md §2 graph-level features (`dataset.mlp_features`),
+  standardised with train-only mean/std (D14 §5); 2 hidden layers with ReLU.
+- **WL:** a WL-GOOSE-style linear model.
+  - *Features:* the WL colour histogram over the fact–action graph with
+    the state marked on the fact nodes (`dataset.wl_colours`, 2 rounds).
+    The colour vocabulary is fitted on train only; colours unseen in train
+    are dropped.
+  - *Fit:* ridge regression by conjugate gradients on the sparse
+    histogram. The asymmetric loss is fitted by iteratively reweighted
+    least squares (expectile-style weights), 10 rounds.
+  - CPU only; deterministic, so it needs no training seed.
+- **GNN:** message passing over the fact–action graph.
+  - *Per layer:* fact → action over preconditions, then action → fact over
+    add effects, both by mean aggregation.
+  - *Readout:* mean fact, mean action and mean goal fact.
+  - *Inputs:* facts carry (held, is_goal); actions carry normalised cost,
+    a kind one-hot and the CVSS PR one-hot (`dataset.static_graph`).
+  - *Default:* 64 hidden × 3 layers.
+
+### 2. Losses
+
+- **MSE** on effort units.
+- **Asymmetric:** the squared error multiplied by **w = 4** when
+  h_θ(s) > h\*(s), so overestimating costs 4× as much as underestimating by
+  the same amount. w is fixed here and is **not tuned**.
+
+### 3. Training
+
+- Train batches only. Early stopping on the validation value of the
+  training loss, with patience 5 and at most 30 epochs. The best-val
+  checkpoint is kept.
+- Adam, with batch size 256 for the MLP. The GNN takes one instance's
+  states per step (at most 256), so every state of a step shares one graph.
+- *Seeded:* `torch.manual_seed(seed)` and instance order from
+  `random.Random(f"train:{seed}")`.
+- Every run goes through `runlog.write_run` to `results/training/` (tracked):
+  config, commit, hardware, per-epoch train and val loss, wall time per
+  epoch, and the checkpoint.
+
+### 4. Validation harness (`src/ahg/evaluate.py`, `scripts/evaluate.py`)
+
+The same code will later run each test split once, with
+`purpose="evaluation"` through the test-access log. It has no per-split
+branches.
+
+- **Per labelled instance:** A\* from the initial state with h0, h_max,
+  h_sp, h_add and LM-cut (Python) and each learned h_θ.
+  - All runs share `best_first_search`, the same tie-breaking and the same
+    200k expansion budget. Budget hits are counted, and the ratio uses the
+    budget value.
+  - Every admissible baseline's plan cost must equal the label h\*(init),
+    or the run aborts.
+  - The learned heuristic is called once per state, with feature
+    construction and the forward pass inside the timed search (rule 7).
+- **Reported, per learned model against each baseline:**
+  - the geometric mean of per-instance expansion ratios, with a bootstrap
+    95% CI (10,000 resamples of instances);
+  - the plan-cost ratio against optimal (geometric mean and CI, plus the
+    fraction solved optimally);
+  - the end-to-end time ratio (geometric mean and CI);
+  - overestimation on the labelled `walk` states and, separately, on the
+    A\*-expanded states (`expanded_lmcut` ∪ `expanded_hmax`), plus
+    successors as a third row: the rate h_θ > h\*, and the mean and max
+    violation in effort units.
+
+### 5. Hyperparameter search on validation (budget fixed here)
+
+One seed (0), MSE loss, selection by validation MSE. Every config tried is
+recorded, failures included.
+
+| model | grid | configs |
+|---|---|---|
+| GNN | lr ∈ {1e-3, 3e-3} × hidden ∈ {64, 128} × layers ∈ {3, 6} | 8 |
+| MLP | lr ∈ {1e-3, 3e-3} × hidden ∈ {64, 128} | 4 |
+| WL | ridge λ ∈ {0.1, 1, 10} | 3 |
+
+- **Wall-clock budget:** 3 h in total on the M4. If it runs out, the search
+  stops and the configs not run are listed as not run.
+- **Then the pilot:** for each model, the selected config × {MSE,
+  asymmetric}, seed 0, evaluated on `val` with the harness. GNN 64×3 is
+  also always reported, as the default and the D17 primary, whatever is
+  selected.
+- **Epoch time:** measured on CPU and on MPS for the GNN and MLP.

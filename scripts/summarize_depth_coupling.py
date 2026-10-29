@@ -14,6 +14,7 @@ to them and stay honest.
 
 import importlib.util
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict
@@ -202,6 +203,43 @@ def extras_table(runs):
         print(f"- generation failures: {dict(fails) or 0}\n")
 
 
+def sign_test(higher, lower):
+    """Exact two-sided sign test on the non-tied pairs."""
+    n, k = higher + lower, min(higher, lower)
+    return min(1.0, 2 * sum(math.comb(n, i) for i in range(k + 1)) / 2 ** n) if n else None
+
+
+def sampling_bias_table(runs):
+    print("### Per-instance sampling bias: h < h\\* rate on A\\*-expanded vs random-walk states\n")
+    print("Per reachable instance, the heuristic's h < h\\* fraction on the distinct states its own A\\* search "
+          "expanded, against the fraction on the [S]-stream walk states. Counts of instances where the expanded "
+          "rate is higher / equal / lower; exact two-sided sign test on the non-ties. Instances with no labelled "
+          "state in either set are skipped.\n")
+    print("| run | heuristic | group | higher | equal | lower | equal, both 0 | sign-test p | skipped |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    for name, (_, recs) in runs.items():
+        for h, idx in (("lmcut", 2), ("hmax", 1)):
+            groups = [("all", lambda r: True)] + [(f"D={D}", lambda r, D=D: r["D"] == D) for D in dc.LEVELS] \
+                     + [("n=20, D≥2", lambda r: r["n"] == 20 and r["D"] >= 2)]
+            for gname, keep in groups:
+                hi = eq = lo = zero = skip = 0
+                for r in recs:
+                    if r["status"] != "ok" or not keep(r):
+                        continue
+                    walk, ex = r["sampled"]["states"], r["expanded_states"][h]
+                    if not walk or not ex["n"]:
+                        skip += 1
+                        continue
+                    fw = sum(t[idx] < t[0] for t in walk) / len(walk)
+                    fe = ex[h]["lt"] / ex["n"]
+                    hi, eq, lo = hi + (fe > fw), eq + (fe == fw), lo + (fe < fw)
+                    zero += fe == fw == 0
+                p = sign_test(hi, lo)
+                print(f"| {name} | {h} | {gname} | {hi} | {eq} | {lo} | {zero} | "
+                      f"{'—' if p is None else ('< 1e-300' if p == 0 else f'{p:.2g}')} | {skip} |")
+    print()
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -222,6 +260,7 @@ def main():
         interaction_table(name, recs)
     timing_table(runs)
     extras_table(runs)
+    sampling_bias_table(runs)
 
 
 if __name__ == "__main__":

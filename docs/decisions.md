@@ -1703,3 +1703,115 @@ measurement, formulation or result changes.
   - deterministic bytes;
   - the both-files error;
   - a committed pre-D18 run still loads.
+
+## 2026-10-29 — D19: Label pipeline: splits, sampling scheme and storage (updates D14)
+
+**Status: ADOPTED, 2026-10-29,** before any label batch exists. D14 stays as
+written. Where this entry differs from it, this entry wins (§2 sampling,
+§1 cross-check scope, §4 storage format). Implemented in `src/ahg/splits.py`,
+`src/ahg/labels.py`, `src/ahg/dataset.py` and `scripts/make_labels.py`.
+
+### 1. Splits (D17 §3, fixed here before any state is sampled)
+
+One topology seed gives exactly one instance. The instance's knob cell
+(variant, n, D, ρ, m) is `cells[(seed − first seed) mod |cells|]`, so cells
+are balanced and the mapping needs no rng.
+
+| split | seeds | variants | n | D | (ρ, m) | CVE pool |
+|---|---|---|---|---|---|---|
+| `train` | 1000–1599 | flat, tiered3, tiered5 | 12, 20 | 2, 3 | all 7 of D15 | `train` |
+| `val` | 1600–1699 | same | same | same | same | `train` |
+| `test_id` | 1700–1799 | same | same | same | same | `train` |
+| `test_size` | 1800–1899 | same | **30** | same | same | `train` |
+| `test_structure` | 1900–1999 | **hub_and_spoke** | 12, 20 | same | same | `train` |
+| `test_vuln` | 2000–2099 | flat, tiered3, tiered5 | 12, 20 | same | same | **`heldout`** |
+| `test_vuln_cost` | 2100–2199 | same | same | same | same | **`heldout_costly`** |
+
+All splits use D15+D16 knobs (`exposed_level0=True`). Each test split
+changes exactly one factor against `train` (CLAUDE.md §3). The seed ranges
+are disjoint from each other, from the sweep seeds (0–19) and from the
+replication seeds (100–119). `tests/test_splits.py` asserts this.
+
+**CVE pools.**
+- `heldout` = the CVEs with `int(sha256("cvepool:" + cve_id), 16) mod 10 < 3`
+  (485 of 1,473 here); `train` = the other 988. They are disjoint by
+  construction. Every service family keeps CVEs in both; the smallest are
+  ssh (40 / 18) and ftp (45 / 17).
+- *Expected:* the GNN sees CVSS attributes, not CVE ids, so `test_vuln`
+  shifts *which* CVEs appear but barely shifts the feature distribution. The
+  cost-shifted pool is the real feature shift.
+- `heldout_costly` = `heldout` restricted to exploitability E ≤ 2.8, i.e.
+  every exploit cost ≥ 1 + 9·(1 − 27/38) ≈ 3.6 effort units (344 CVEs;
+  smallest families ftp and ssh, 11 each). **This replaces
+  D17's "top exploitability tercile":** E = 3.9 is the most common score in
+  6 of 8 families, so a tercile split is not defined without arbitrary
+  tie-breaking. Its top would also be almost entirely E = 3.9, which makes
+  every exploit cost the 1-unit floor. Excluding the mode instead shifts
+  costs upwards and keeps every family populated.
+
+**Test-access log.** Every read of a test-split batch through the loader
+appends a line (UTC time, batch id, split, git commit, argv, the caller's
+stated purpose) to the committed `results/test_access_log.jsonl`.
+- A read without a stated purpose is refused.
+- A second `evaluation` read of the same split is refused unless the caller
+  names the D-entry that permits it (D17 §4).
+- Generating a test batch writes it but never reads it back.
+
+### 2. Sampling scheme (replaces D14 §2's two sources)
+
+Per instance, in this order, from separate rng streams seeded on
+`"labels:<source>:<variant>:<n>:<seed>"`:
+
+1. **`optimal_path`:** the states along A\*+LM-cut's optimal plan from the
+   initial state, the initial state included.
+2. **`walk`:** D14's random rollouts (`measure.sample_states`), capped at
+   `walk_cap` distinct non-goal states.
+3. **`expanded_lmcut`, `expanded_hmax`:** the distinct states expanded by
+   A\*+LM-cut and by A\*+h_max from the initial state.
+4. **`successor`:** the distinct generated successors of those expanded
+   states, subsampled to `successor_cap` if there are more. These are the
+   states A\* evaluates h on (D17 §3; the per-instance sign test, D17 §1).
+
+States are deduplicated per instance. A state reached by several sources
+gets one label row, listing every source. Goal states (h\* = 0) can occur
+only as successors or as the end of the optimal path. They are kept and
+counted (D14 §1).
+
+### 3. Labels and their checks (updates D14 §1)
+
+- **Label.** h\*(s) is A\*+LM-cut's cost from s, with a per-state budget.
+  States on the optimal path are labelled from the suffix of that one plan
+  (a suffix of an optimal plan is optimal). A budget hit is a failure row,
+  never dropped (rule 10).
+- **Cross-checks** (any mismatch aborts the batch, and nothing is written):
+  - the independent oracle (`src/ahg/oracle.py`) on **every** state of
+    instances with n ≤ 12, and on `oracle_states` states drawn per instance
+    above that. An oracle run that exceeds its pop budget is recorded as
+    "not checked", never as agreement;
+  - backward-induction enumeration (`measure.enumerate_exact`) on every
+    state, wherever the reachable space is ≤ `enum_cap`;
+  - no admissible heuristic (h_max, LM-cut) above the label.
+- **Changed from D14 §1:** D14 had the oracle check every label. At n = 20,
+  D = 3 the uninformed oracle is too slow from early states (UCS hit 200k
+  pops on 21 of 227 instances at n = 30, [N30]). A recorded subset, plus
+  enumeration where it fits, keeps the rule-6 cross-check without that
+  cost.
+
+### 4. Storage (D14 §4, made concrete)
+
+`data/labels/<batch-id>/`, gitignored and append-only. An existing batch
+directory is never overwritten.
+- `<batch-id>` = `<split>-<config sha256[:8]>-<commit[:7]>[-s<k>of<K>]`.
+  The shard suffix is used by the SLURM array: one batch per shard.
+- `labels.jsonl.gz`: one row per (instance, state): instance index, state
+  (hex), h\*, sources.
+- `failures.jsonl.gz`: unreachable goals, generation failures and
+  label-budget hits.
+- Both files use gzip with mtime = 0 and are written in instance order, so
+  the same config at the same commit gives byte-identical files.
+- `manifest.json`: the D14 §4 fields. It adds a content hash (SHA-256 over
+  both files) and a per-instance `task_digest`. The loader rebuilds each
+  task with `make_instance` and refuses a batch whose digest or
+  `cves.csv` SHA-256 does not match.
+- Configs are JSON, under `configs/labels/` (stdlib only; there were no
+  configs to follow).

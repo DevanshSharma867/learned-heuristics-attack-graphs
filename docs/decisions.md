@@ -1273,3 +1273,277 @@ their services. The tiers protect the internal estate behind them.
 - **The original D15 run** is reported in full next to it.
 - **A hard regime that appears only in the original run** is reported but
   not claimed.
+
+## 2026-10-29 — D17: Pivot after the depth–coupling sweeps (options)
+
+**Status: PROPOSED — options, not adopted.** Nothing here changes the
+hypotheses in CLAUDE.md §0, the paper direction (`findings.md` §6) or any
+earlier decision. Adopting an option needs a separate status change by the
+author. The hypotheses are then revised in CLAUDE.md, with the reason
+recorded here.
+
+### Inputs
+
+- **[F16]**: `results/landscape/depth_coupling_sweep/full_d16/2026-10-28T142309Z-ab208e3/`,
+  the primary run (D16).
+- **[B]**: `results/feasibility/inference_microbench/2026-10-29T062211Z-1627e16/`.
+
+**1. No hard regime** (`findings.md` §7, [F16]).
+
+- 0 of 192 eligible cells meet D15 §6; the D15 run gives 0 of 190.
+- Pooled median R is 1.00 in every row.
+- At D = 3, n = 20 the medians are: A\*+LM-cut 9 expansions, A\*+h_max 15,
+  optimal plan length 8.
+- An A\* search expands at least as many nodes as the optimal plan length.
+  So a perfect heuristic could save at most about 1 expansion against
+  LM-cut and about 7 against h_max.
+
+**2. Inference cost** ([B]; speed only: untrained, randomly initialised
+models on [F16]'s 391 reachable D = 3, n = 20 instances; 32,250 successor
+states).
+
+- **Per-state cost on the CPU** (1 thread, batched over each node's
+  successors, feature extraction included):
+  - h_max 0.041 ms;
+  - LM-cut 0.701 ms;
+  - MLP 0.040 ms, 96% of it feature extraction (mostly h_sp(s));
+  - GNN with 64 hidden units × 3 layers: 0.112 ms;
+  - GNN with 128 × 6: 0.395 ms.
+- **One state at a time** is 1.3–2.6× slower than batched.
+- **MPS never helps.** The batches are small (a median of 7 successors), so
+  the GNN 64×3 costs 0.202 ms per state there. Torch's default 4 threads are
+  slower than 1.
+- **Break-even.** The self-consistent version comes from [B]'s
+  single-process reruns: it reproduces the classical searches' own counts
+  to within about 13%. The run-timing version uses [F16]'s 6-worker
+  timings, which are about 2× inflated against [B]'s single-process
+  timings ([B] self-check).
+  - *Largest per-state cost to tie A\*+LM-cut at its own expansion counts:*
+    0.62 ms (1.34 ms from the run's timings).
+  - *Largest expansion count at which a method still beats A\*+h_max on
+    time (E\*_hm):*
+    - MLP batched: 14.4;
+    - GNN 64×3 batched: 5.3;
+    - GNN 128×6 batched: 1.5.
+  - *Against A\*+LM-cut (E\*_lm):* 139, 53 and 14 respectively.
+  - *Consequence:* the GNN 64×3's E\*_hm is below the plan length (8) on 76%
+    of instances. On those instances even a perfect GNN of that cost could
+    not beat A\*+h_max on wall-clock time. It beats A\*+LM-cut whenever it
+    expands ≤ 53 nodes (median).
+- **The Python-LM-cut caveat.** These are this repo's Python heuristics
+  against torch's compiled kernels. A compiled LM-cut (for example Fast
+  Downward's) would be much cheaper per state. That has **not been
+  measured** here, so the comparison against LM-cut is
+  implementation-specific.
+
+**3. Sampling bias** (`findings.md` §7.3, [F16], D = 3, n = 20).
+
+- LM-cut is below h\* on 6.5% of random-walk states and on 36.9% of
+  A\*-expanded states.
+- Both figures are pooled over states. A per-instance paired test has
+  **not been run**.
+
+**4. Timeline.** About ten weeks from the week of 5 October (the proposal);
+final dates are TBA. As of 29 October, about 6 weeks remain (weeks 5–10),
+and week 10 is the report, demo and viva.
+
+### D14 consequence (applies to every option)
+
+- **New label source.** D14 §2 gains a third source, `astar` (labels are
+  still exact h\*):
+  - the states A\*+LM-cut and A\*+h_max expand from the initial state,
+  - plus their generated successors, the states A\* actually evaluates h
+    on.
+
+  These sit alongside the `optimal_path` and `rollout` sources. Each label
+  records its source.
+- **Evaluation by source.** Test metrics (MAE, overestimation rate, max
+  violation) are reported separately on walk states and on A\* states.
+- **No leakage.** These states come from classical solvers run on each
+  instance. A test instance's A\* states are labelled into its test batch
+  only (rule 1).
+- **Optional extension.** States expanded by A\*+h_θ itself could be added
+  in a second round, with labels and splits unchanged. This is optional
+  and not costed below.
+
+### Option (a): efficiency H1, judged on end-to-end time
+
+**Hypotheses** (instance-level paired comparisons; geometric means of
+per-instance ratios; bootstrap 95% CIs; Wilcoxon signed-rank; ≥ 5 training
+seeds; single-process timing on the same machine; inference, feature
+extraction and batching included, as in rule 7):
+
+- **H1.** On unseen in-distribution test instances, A\*+h_θ (GNN) satisfies
+  both:
+  - (i) it expands fewer nodes than A\*+h_max: geometric-mean ratio ≤ 0.90,
+    with CI upper bound < 1;
+  - (ii) it takes less end-to-end time than A\*+LM-cut: geometric-mean ratio
+    < 1, with CI upper bound < 1.
+
+  If either fails, H1 is falsified.
+- **H2.** The H1 effect costs a mean plan-cost ratio against the optimum of
+  ≤ 1.05 (CI upper bound). A ratio above 1.10 falsifies "small cost".
+  - Measured suboptimality only; there is no bound claim (rule 8).
+- **H3.** Under each shift, measured separately, the H1(i) expansion ratio
+  is higher (worse) than in distribution: the bootstrap CI of the
+  difference excludes 0. The shifts are size (n = 20 → 30), held-out
+  family, and held-out CVE groups.
+
+**Viable given [B]?**
+
+- *Yes, narrowly.*
+  - (ii) is easy: the GNN 64×3 beats A\*+LM-cut on time if it expands ≤ 53
+    nodes.
+  - (i) needs expansions in [8, 15), i.e. between the plan length and
+    h_max's count. That window is narrow.
+- *What it needs:* batched successor evaluation in `search.py` (one call per
+  expansion); "single" mode is about 2× worse.
+- *What stays true:* A\*+h_max remains the fastest method in end-to-end time
+  on 76% of instances, whatever h_θ learns.
+
+**Instance distribution.**
+
+- D15+D16 knob settings with D ∈ {2, 3}, all (ρ, m), all four variants,
+  n ∈ {12, 20} for training.
+- The default D12 and pr_gated schemas give h_max ≈ plan-length expansions
+  ([S], [L]), so there is nothing for (i) to save there.
+- Size-shift instances at n = 30 under D16 have **not been generated**;
+  their reachability is not yet measured.
+
+**Weeks: about 5–5.5.**
+
+| work | weeks |
+|---|---|
+| labels: D14 implementation plus the `astar` source | 1 |
+| MLP and GNN training | 1–1.5 |
+| batched A\* and the evaluation and timing harness | 1 |
+| shift splits | 1 |
+| writing | 1 |
+
+That is tight against about 6 weeks. It meets the Research track and every
+proposal promise: GNN, MLP ablation and the generalisation splits.
+
+**Main reviewer threat.** The wall-clock win is against a Python LM-cut.
+A\*+h_max is faster than both methods, and inadmissible classical baselines
+(GBFS or weighted A\* with h_add or h_FF; CLAUDE.md §5) are probably faster
+still. A win defined as "fewer expansions than h_max and less time than
+LM-cut" can be read as a Pareto point that the cheapest baseline
+dominates.
+
+### Option (b): characterisation paper
+
+**Hypotheses.**
+
+- **H1 (near-exactness).** In the D16 grid on fresh seeds 100–119, no
+  eligible cell meets D15 §6 (both conditions).
+  - A further generator variant with credential levels correlated with
+    network position (`findings.md` §7.5) would need its own pre-registered
+    D-entry. If adopted, the same criterion applies to it.
+- **H2 (sampling bias).** Per instance, LM-cut's h < h\* fraction is higher
+  on A\*-expanded states than on random-walk states.
+  - The test is a Wilcoxon signed-rank test over the instances where either
+    fraction is nonzero, with p < 0.01, and a median within-instance ratio
+    ≥ 2 at n = 20, D ≥ 2.
+  - It is computed first on the existing runs as exploratory, then confirmed
+    on the fresh-seed runs of H1.
+- **H3 (learning, secondary).** A GNN trained on walk + A\* labels has at
+  least 20% lower MAE on A\*-expanded test states than the same GNN trained
+  on walk labels only. Label counts are equal, the comparison is paired
+  over test instances, and there are 5 seeds. Overestimation rate is
+  reported for both.
+
+**Viable given [B]?**
+
+- *Yes; [B] is not on the critical path.* Its break-even numbers become a
+  supporting result instead: at these sizes, inference cost alone rules out
+  a wall-clock win over A\*+h_max for any GNN of the benchmarked sizes on
+  most instances.
+
+**Instance distribution.**
+
+- The full D15/D16 grid for H1 and H2.
+- D15+D16 with D ∈ {2, 3}, n ∈ {12, 20}, for H3, where A\* states carry
+  gaps.
+
+**Weeks: about 4.5.**
+
+| work | weeks |
+|---|---|
+| fresh-seed sweep (about 70 min of compute), per-instance analysis | 1 |
+| labels plus H3 | 1.5–2 |
+| writing | 1.5 |
+
+- *Research track:* met.
+- *Proposal promises:* partly met. The GNN is built, but the MLP ablation
+  becomes optional and the size, structure and vulnerability splits are
+  dropped. That is a stated deviation from the proposal, to be explained in
+  the report.
+
+**Main reviewer threat.** "Near-exact on your generator" may say little
+about real attack graphs, since the topologies are synthetic, the grid is
+narrow and no MulVAL check is planned. Negative characterisation results
+are also harder to place. Related work on how accurate delete-relaxation
+heuristics are has to be checked before claiming novelty: **[VERIFY]**, no
+search done yet.
+
+### Option (c): hybrid, (b) then (a)
+
+**Hypotheses.**
+
+- **H1 (near-exactness).** As (b) H1.
+- **H2 (efficiency, with the sampling design).** As (a) H1 (i) and (ii),
+  with training labels from walk + A\* states.
+  - A walk-only ablation at equal label count is reported next to it. This
+    carries (b) H3's comparison into the efficiency setting.
+  - Suboptimality is reported as (a) H2 (≤ 1.05) but is not a separate
+    hypothesis.
+- **H3 (generalisation).** As (a) H3.
+- **Descriptive, not hypothesised:** (b) H2's sampling-bias analysis, as
+  part of the characterisation half.
+
+**Viable given [B]?** As (a): narrowly. The characterisation half does not
+depend on [B].
+
+**Instance distribution.** As (b) for H1; as (a) for H2 and H3.
+
+**Weeks: about 6–6.5.** That is at or over the remaining time.
+
+- To fit, keep H1 to the fresh-seed rerun (no new generator variant), and
+  run the size and structure shifts before the vulnerability shift.
+- The learning pipeline must start in week 5.
+- It meets the Research track and every proposal promise.
+
+**Main reviewer threat.** It reads as two half-papers. The first half also
+argues that the second half's regime is narrow. That is defensible only if
+the writing makes the characterisation the motivation for how the learner
+is evaluated (time, A\*-state labels). The (a) wall-clock threat applies
+too.
+
+### Recommendation (separate from the options)
+
+**(c), scoped as stated above. The author decides.**
+
+- **The characterisation half is mostly done.**
+  - The sweeps, `findings.md` §7 and [B] exist.
+  - The fresh-seed rerun is about 70 minutes of compute.
+  - It turns a negative result into the paper's first contribution instead
+    of a footnote.
+- **(b) alone sheds proposal promises.** It drops the MLP ablation and the
+  generalisation splits, which the course and the proposal commit to.
+  Learning is the "Applications of Deep Learning" half of the topic.
+- **(a) alone leads with its weakest claim.** [B] shows that a GNN cannot
+  beat A\*+h_max on time on most instances even with perfect guidance. Led
+  by H1, the paper would most likely report a narrow or negative headline
+  without the context that explains it. (c) supplies that context.
+- **The sampling-bias finding links the halves.** It motivates both the
+  `astar` label source and the walk-only ablation, so the halves are one
+  argument rather than two.
+- **Fallback.** If time runs short, the order of work keeps a complete
+  result at every stage:
+  1. characterisation;
+  2. in-distribution H2;
+  3. the shifts.
+- **Before adopting**, check two things:
+  - the per-instance sampling-bias test (H2 of (b)), since the pooled
+    6.5% / 36.9% may be driven by a few instances;
+  - the reachability of n = 30 under D16, needed for the size shift.

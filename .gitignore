@@ -16,3 +16,4 @@ results/raw/*
 !results/landscape/
 !results/feasibility/
 docs/ai_usage_log.md
+third_party/

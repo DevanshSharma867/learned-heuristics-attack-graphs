@@ -2,12 +2,14 @@
 
 Each run gets its own directory results/landscape/<name>/<UTC timestamp>-<commit>/
 (or under another root, e.g. results/feasibility/)
-holding raw.json (the measurements), report.md (rendered from raw.json) and
+holding raw.json.gz (the measurements, gzipped compact JSON since D18; earlier
+runs hold raw.json), report.md (rendered from the raw data) and
 provenance.json (git commit, dirty flag, seeds, config, date, versions,
 hardware). These are tracked in git, unlike results/raw/. A run directory
 that already exists is never overwritten, so earlier runs stay as they were.
 """
 
+import gzip
 import importlib.metadata
 import json
 import os
@@ -19,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LANDSCAPE = ROOT / "results" / "landscape"
+RAW_GZ, RAW_JSON = "raw.json.gz", "raw.json"
 
 
 def _git(*args: str) -> str:
@@ -76,7 +79,7 @@ def provenance(seeds: list[int], config: dict) -> dict:
 
 def write_run(name: str, raw: object, report_md: str, seeds: list[int], config: dict,
               root: Path | None = None) -> Path:
-    """Write raw.json, report.md and provenance.json for one run; return its directory.
+    """Write raw.json.gz, report.md and provenance.json for one run; return its directory.
 
     root: parent of the run folders, results/landscape/ by default.
     """
@@ -84,7 +87,19 @@ def write_run(name: str, raw: object, report_md: str, seeds: list[int], config: 
     stamp = prov["date_utc"].replace(":", "").replace("+0000", "Z")
     out = (root or LANDSCAPE) / name / f"{stamp}-{prov['git_commit'][:7]}"
     out.mkdir(parents=True, exist_ok=False)  # append-only: never overwrite a run (rule 11)
-    (out / "raw.json").write_text(json.dumps(raw, indent=1) + "\n")
+    # D18: gzip with mtime=0, so the same raw data always gives the same bytes.
+    (out / RAW_GZ).write_bytes(gzip.compress(json.dumps(raw, separators=(",", ":")).encode(), mtime=0))
     (out / "report.md").write_text(report_md)
     (out / "provenance.json").write_text(json.dumps(prov, indent=1) + "\n")
     return out
+
+
+def load_raw(run_dir: str | Path) -> object:
+    """The raw data of one run, from raw.json.gz (D18) or, for runs written before D18, raw.json."""
+    run_dir = Path(run_dir)
+    gz, plain = run_dir / RAW_GZ, run_dir / RAW_JSON
+    if gz.exists() and plain.exists():
+        raise ValueError(f"{run_dir} holds both {RAW_GZ} and {RAW_JSON}; which one is the run is ambiguous")
+    if gz.exists():
+        return json.loads(gzip.decompress(gz.read_bytes()))
+    return json.loads(plain.read_text())

@@ -67,7 +67,7 @@ from torch import nn
 from ahg.attack_graph import make_instance
 from ahg.cve import load_table
 from ahg.heuristics import hmax, hsp, lmcut
-from ahg.runlog import write_run
+from ahg.runlog import load_raw, write_run
 from ahg.search import INF, astar, uniform_cost
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -331,7 +331,7 @@ def main():
     args = ap.parse_args()
     devices = [d for d in args.devices.split(",") if d != "mps" or torch.backends.mps.is_available()]
     default_threads = torch.get_num_threads()
-    recs = [r for r in json.loads((ROOT / RUN / "raw.json").read_text())["instances"]
+    recs = [r for r in load_raw(ROOT / RUN)["instances"]
             if r["status"] == "ok" and r["D"] == D and r["n"] == N][:args.limit]
     pool = load_table(ROOT / "data" / "derived" / "cves.csv")
     t0 = time.perf_counter()

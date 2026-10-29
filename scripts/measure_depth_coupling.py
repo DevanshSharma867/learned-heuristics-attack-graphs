@@ -43,7 +43,7 @@ from ahg.cve import load_table
 from ahg.measure import HardFailure, check_admissible, enumerate_exact, exact_cost, gap_stats, sample_states
 from ahg.network import hop_distances
 from ahg.oracle import optimal_cost
-from ahg.runlog import write_run
+from ahg.runlog import load_raw, write_run
 from ahg.search import INF, uniform_cost
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -224,8 +224,8 @@ def measure_instance(job):
 
 def compare_anchors(instances):
     """Anchor records must equal [S] on every field [S] has (seconds excluded). Returns mismatches."""
-    (ref_path,) = glob.glob(str(ROOT / "results/landscape/landscape_small_n/*/raw.json"))
-    ref = {(r["family"], r["n"], r["seed"]): r for r in json.loads(Path(ref_path).read_text())["instances"]}
+    (ref_path,) = glob.glob(str(ROOT / "results/landscape/landscape_small_n/*/"))
+    ref = {(r["family"], r["n"], r["seed"]): r for r in load_raw(ref_path)["instances"]}
     bad, n = [], 0
     for r in instances:
         if not r["pr_gated"]:

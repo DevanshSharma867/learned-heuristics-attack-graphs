@@ -13,6 +13,7 @@ from ahg.attack_graph import KnobInfeasible, UnreachableGoal, make_instance
 from ahg.cve import load_table
 from ahg.heuristics import ADMISSIBLE, HEURISTICS
 from ahg.network import INTERNET
+from ahg.runlog import load_raw
 from ahg.oracle import optimal_cost
 from ahg.search import astar
 
@@ -148,7 +149,7 @@ def test_oracle_matches_search_on_every_state(family, n, knob_id, _):
 # --- D16: exposed_level0 -------------------------------------------------------------
 
 GOLDEN_D15 = json.loads(golden.GOLDEN_D15.read_text())["digests"]
-D15_PILOT = golden.ROOT / "results/landscape/depth_coupling_sweep/pilot/2026-10-28T121824Z-5fb8df9/raw.json"
+D15_PILOT = golden.ROOT / "results/landscape/depth_coupling_sweep/pilot/2026-10-28T121824Z-5fb8df9"
 
 
 @pytest.mark.parametrize("cell", golden.D15_CELLS, ids=lambda c: golden.d15_key(*c[:1], *c[3:], "s"))
@@ -160,7 +161,7 @@ def test_d15_mode_unchanged_by_d16(cell):
         assert golden.d15_digest(f, p, n, D, rho, m, s, POOL) == want
         assert golden.d15_digest(f, p, n, D, rho, m, s, POOL, exposed_level0=False) == want
     # ... and matches what the pilot itself recorded for seed 0 of this cell.
-    pilot = json.loads(D15_PILOT.read_text())["instances"]
+    pilot = load_raw(D15_PILOT)["instances"]
     (rec,) = [r for r in pilot if not r["pr_gated"] and (r["variant"], r["n"], r["D"], r["rho"], r["m"], r["seed"])
               == (v, n, D, rho, m, 0)]
     try:

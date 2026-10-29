@@ -3,7 +3,7 @@
 Usage: python scripts/summarize_depth_coupling.py RUN_DIR [RUN_DIR ...]
 
 Each RUN_DIR is a results/landscape/depth_coupling_sweep/<mode>/<stamp>/ folder.
-Prints markdown to stdout, computed from raw.json alone, with the cell-level
+Prints markdown to stdout, computed from the runs' raw data alone, with the cell-level
 D15 §6 rules taken from measure_depth_coupling.summarise so the criterion is
 applied exactly as the run's own report.md applies it.
 
@@ -19,6 +19,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from ahg.runlog import load_raw
+
 ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("dc", ROOT / "scripts" / "measure_depth_coupling.py")
 dc = importlib.util.module_from_spec(_spec)
@@ -27,7 +29,7 @@ INF = float("inf")
 
 
 def load(run_dir):
-    raw = json.loads((Path(run_dir) / "raw.json").read_text())
+    raw = load_raw(run_dir)
     return raw, [r for r in raw["instances"] if not r["pr_gated"]]
 
 

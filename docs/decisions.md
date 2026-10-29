@@ -1547,3 +1547,31 @@ too.
   - the per-instance sampling-bias test (H2 of (b)), since the pooled
     6.5% / 36.9% may be driven by a few instances;
   - the reachability of n = 30 under D16, needed for the size shift.
+
+## 2026-10-29 — D18: Compressed raw run data (`raw.json.gz`)
+
+**Status: ADOPTED, 2026-10-29.** This is a storage change only. No
+measurement, formulation or result changes.
+
+**Why.**
+
+- The D15/D16 full runs' `raw.json` files are 50.4 and 55.7 MB.
+- GitHub warns above 50 MB and rejects files above 100 MB. Any larger
+  future run would be unpushable.
+- Gzip compresses the D15+D16 file from 58.4 MB to 1.9 MB, or 1.2 MB if
+  the JSON is also written compactly.
+
+**Rule.**
+
+- *What is written.* `runlog.write_run` writes `raw.json.gz`: compact JSON,
+  gzip with mtime = 0, so identical raw data gives identical bytes.
+- *How runs are read.* Every reader goes through `runlog.load_raw(run_dir)`.
+  - It reads `raw.json.gz` if present, else `raw.json`.
+  - A folder holding both is an error.
+- *Committed runs are untouched (rule 11).* Every run before this decision
+  keeps its `raw.json` and is read unchanged through the fallback.
+- *Tests.*
+  - a round trip in both formats;
+  - deterministic bytes;
+  - the both-files error;
+  - a committed pre-D18 run still loads.

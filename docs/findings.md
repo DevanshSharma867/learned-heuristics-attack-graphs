@@ -334,6 +334,18 @@ Every table below is printed by `scripts/summarize_depth_coupling.py [F15] [F16]
 from `raw.json`. The criterion uses the same `summarise` function as the
 runs' own `report.md`.
 
+**Fresh-seed replication (D17 §1, criteria R1–R3 fixed at adoption): REPLICATED.**
+- **[F16r]:** `results/landscape/depth_coupling_sweep/replicate_d16/2026-10-29T121740Z-f71c13f/`.
+  D16 grid on seeds 100–119, 6,720 instances, f71c13f, clean, 51 min.
+- **R1, no hard regime: holds.** 0 of 187 eligible cells meet D15 §6
+  part 1. The highest eligible median R is 1.89 (flat n=20 D=3 ρ=1.0 m=all).
+  The pooled median R is 1.00 in every (D, n) row.
+- **R2, h_max sampling bias at n=20, D≥2: holds.** 782 higher / 3 equal /
+  101 lower, p = 3.4e-131.
+- **R3, LM-cut sampling bias at n=20, D≥2: holds.** 295 higher / 410 equal /
+  181 lower, p = 2.0e-7.
+- Printed by `scripts/summarize_depth_coupling.py [F16] [F16r]`.
+
 ### 7.1 Criterion (D15 §6): not met in either run
 
 | run | cells | eligible | meet part 1 (median R ≥ 5, CI low ≥ 3) | highest eligible median R | reachable / unreachable / gen. fail | censored |

@@ -27,3 +27,12 @@ def test_write_run_never_overwrites(tmp_path, monkeypatch):
         pass
     else:
         raise AssertionError("second write to the same run directory was not refused")
+
+
+def test_write_run_root_overrides_landscape(tmp_path, monkeypatch):
+    monkeypatch.setattr(runlog, "LANDSCAPE", tmp_path / "landscape")
+    monkeypatch.setattr(runlog, "provenance", lambda seeds, config: {"date_utc": "2026-01-01T00:00:00+00:00",
+                                                                   "git_commit": "abcdef0123"})
+    out = runlog.write_run("r", {"x": 1}, "# r\n", [0], {}, root=tmp_path / "feasibility")
+    assert out.parent == tmp_path / "feasibility" / "r"
+    assert not (tmp_path / "landscape").exists()

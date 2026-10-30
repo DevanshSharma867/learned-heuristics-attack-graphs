@@ -3,15 +3,17 @@
 # at most half an RTX Pro 6000, compute and VRAM, through MPS (cluster rule).
 # Several seeds can share a card through MPS, each within its half-card limit.
 #
-# Submit one job per (model, seed), from the repo root at a clean commit:
+# Submit one job per (model, seed), from the repo root at a clean commit. SET holds
+# scripts/train.py overrides of configs/training/d21.json, space-separated:
 #   for s in 0 1 2 3 4; do
-#     sbatch --export=ALL,MODEL=gnn64x3,SEED=$s,LABELS="data/labels/train-...,data/labels/val-..." \
+#     sbatch --export=ALL,SEED=$s,SET="kind=gnn hidden=128 layers=3 lr=0.001 loss=asym" \
 #         scripts/slurm/train.sbatch
 #   done
+# CUDA training is not bitwise reproducible (scatter-add order), unlike CPU; seeds
+# still fix initialisation and data order.
 # HPC runs report losses, validation metrics and checkpoints only. Test splits
 # and timing stay on the M4 (D17 §4, §5).
 #
-# NOT YET RUNNABLE: scripts/train.py does not exist yet (D17 week 2).
 # TEMPLATE: the gres/MPS/qos lines below must be the ones in the admins'
 # docs/hpc/mock_job.sh (missing from the repo when this was written).
 # Lines marked SET_ME are placeholders that SLURM will reject.
@@ -27,7 +29,7 @@
 #SBATCH --error=logs/train-%j.err
 
 set -euo pipefail
-: "${MODEL:?set MODEL via --export}" "${SEED:?set SEED via --export}" "${LABELS:?set LABELS via --export}"
+: "${SEED:?set SEED via --export}" "${SET:?set SET via --export}"
 cd "${SLURM_SUBMIT_DIR:?}"
 mkdir -p logs
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
@@ -39,4 +41,6 @@ fi
 export CUDA_MPS_ACTIVE_THREAD_PERCENTAGE=50
 export CUDA_MPS_PINNED_DEVICE_MEM_LIMIT="0=48G"
 export PYTHONHASHSEED=0 OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
-uv run --frozen python scripts/train.py --model "$MODEL" --seed "$SEED" --labels "$LABELS" --device cuda
+args=(--set "seed=$SEED" --set device=cuda)
+for kv in $SET; do args+=(--set "$kv"); done
+uv run --frozen python scripts/train.py run "${args[@]}"

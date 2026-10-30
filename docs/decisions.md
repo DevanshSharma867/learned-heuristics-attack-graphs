@@ -1968,3 +1968,20 @@ yet, so two procedural details are fixed now:
 - **Device: CPU.** MPS is at most 1.4× faster per GNN epoch, and its
   scatter-add is not deterministic, so seeded runs would not be exactly
   reproducible.
+
+### D21 amendment 2 (2026-10-30): WL checkpoints are not tracked
+
+D21 §3 tracks every checkpoint. A WL checkpoint is about 70 MB, because the
+2-round WL vocabulary fitted on train has 1,884,617 colours. Four of them
+would put about 280 MB into git history, and each is near GitHub's 100 MB
+file limit. WL fitting is deterministic (no seed) and takes about 6 min.
+So WL `model.pt` files stay local (`.gitignore`) and are identified by their
+SHA-256. Rebuilding one from its tracked config must reproduce the hash.
+GNN and MLP checkpoints (3.8 MB in all so far) stay tracked.
+
+| run | model.pt SHA-256 |
+|---|---|
+| `results/training/search/wl-lam0.1-mse-s0/2026-10-30T064612Z-eea7a44` | `3aff6fff7541131cf9cdfec653360215e3c58442194e69899283fcdc438193a7` |
+| `results/training/search/wl-lam1.0-mse-s0/2026-10-30T064803Z-eea7a44` | `42c1379373c748090915de3476b374fd75933e009115a6322eac3462fc05ee10` |
+| `results/training/search/wl-lam10.0-mse-s0/2026-10-30T064947Z-eea7a44` | `3eeb81971b112a4f909b481a1f42e04eb2c740737bd7206c8c4bac6f5b2b2925` |
+| `results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44` | `edc61df5b494d9f79476758827640019da80dbeb46cace4602614cba11ee9b65` |

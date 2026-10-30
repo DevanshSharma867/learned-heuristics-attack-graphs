@@ -18,6 +18,8 @@ results/raw/*
 # Training runs (with checkpoints) and validation evaluations are tracked (D21).
 !results/training/
 !results/evaluation/
+# WL checkpoints are ~70 MB (1.9M-colour vocabulary); local only, SHA-256 in D21 amendment 2.
+results/training/**/wl-*/**/model.pt
 # Every read of a test split (D17 §4, D19 §1) is tracked.
 !results/test_access_log.jsonl
 docs/ai_usage_log.md

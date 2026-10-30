@@ -171,11 +171,16 @@ Follow existing repo conventions where they exist; otherwise default to these.
   harness (`src/ahg/evaluate.py`), `scripts/train.py`, `scripts/evaluate.py`.
 - Experiments run (as of 2026-10-30): C1 characterisation and its replication; labels for every split at
   72e8821 (backup SHA-256 in the experiment log); D21 epoch timing, val hyperparameter search (11/15
-  configs in the 3 h budget), seed-0 pilot of every model × {MSE, asym}, val-pilot evaluation, cost projection.
-- Known issues: on val, no learned model yet expands fewer nodes than h_max or LM-cut (one seed, pilot).
-  WL vocabulary is ~1.9M colours (near graph-specific). 6-layer GNN configs never searched.
-- Next milestone: multi-seed training (D17 seed plan, ~32 M4-CPU-hours projected) on the HPC; decide on
-  the H1 situation before freezing models. No test split has been evaluated.
+  configs in the 3 h budget), seed-0 pilot of every model × {MSE, asym}, val-pilot evaluation, cost projection;
+  D22 improvement round on val (diagnostics; residual, max(h_max, h), Chrestien ranking, residual+ranking, and
+  its 64×6 retrain).
+- D22 outcome (val, one seed, optimistic by selection): stopping rule met. Residual MSE 0.84× h_max
+  expansions with all plans optimal. Ranking variants ≈ 0.60× h_max and 0.94× LM-cut, at plan cost
+  1.04–1.09 and overestimation everywhere. Frozen by the D22 §2 rule: residual+ranking GNN 64×6.
+- Known issues: the D22 §2 rule selects on expansions alone, and its 64×6-over-64×3 choice is within noise
+  (see D22 §8); the author decides before multi-seed. WL vocabulary is ~1.9M colours (near graph-specific).
+- Next milestone: the author's decision on the frozen model, then multi-seed training (D17 seed plan) on the
+  HPC. No test split has been evaluated.
 
 ## 9. Key references (verified in proposal)
 Hart, Nilsson, Raphael 1968 (A*); Sheyner et al. 2002 (attack graphs); Ou et al. 2005 (MulVAL); Hoffmann 2015 (simulated pentesting); Shmaryahu et al. 2018 (pentesting as contingent planning); Agostinelli et al. 2019 (DeepCubeA); Shen, Trevizan, Thiébaux 2020 (STRIPS-HGN); NVD; FIRST CVSS. Add new ones only with a verifiable link.

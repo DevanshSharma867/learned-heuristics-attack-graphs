@@ -2124,3 +2124,18 @@ and anything not run, with the same columns:
 - sibling-ordering accuracy.
 
 The diagnostics are reported too.
+
+### 8. Outcome (2026-10-30, appended after the round; §1–§7 unchanged)
+
+- Run: diagnostics; a, c, d (1.29 h); the 64×6 retrain of d (§5; 3.71 h remained), with one aborted
+  ~11 min attempt, counted against the budget. Total ≈ 1.78 h of 5 h. Rows in `docs/experiment_log.md`.
+- b was run on all 8 pilot models; not run on a or d, where it is the identity (§4).
+- **Stopping rule (§6): met.** CI upper bounds vs h_max: a 0.892, c 0.675, d 0.665, d 64×6 0.667;
+  every b ≥ 1.140.
+- **Frozen by §2:** d at 64×6 (0.5946 vs 0.5951 for d at 64×3).
+- No further round of variants. The multi-seed plan is not started; the choice is the author's.
+- Open points, recorded and not acted on:
+  1. §2 breaks a tie far inside the CIs in favour of the slower, less optimal 64×6 model.
+  2. §2 selects on expansions alone. It therefore prefers the inadmissible ranking models (plan cost
+     1.04–1.09, overestimation everywhere) over a (0.837, every val plan optimal).
+  Any change to the frozen choice is a new decision entry, made before any test split is read.

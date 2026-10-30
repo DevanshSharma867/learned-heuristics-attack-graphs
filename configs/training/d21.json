@@ -1,0 +1,17 @@
+{
+ "kind": "gnn",
+ "loss": "mse",
+ "seed": 0,
+ "hidden": 64,
+ "layers": 3,
+ "lr": 0.001,
+ "lam": 1.0,
+ "w_over": 4.0,
+ "batch_size": 256,
+ "max_epochs": 30,
+ "patience": 5,
+ "irls_rounds": 10,
+ "device": "cpu",
+ "train_batches": ["data/labels/train-677e9fe4-72e8821"],
+ "val_batches": ["data/labels/val-677e9fe4-72e8821"]
+}

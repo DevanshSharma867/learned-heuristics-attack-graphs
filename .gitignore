@@ -15,6 +15,9 @@ results/raw/*
 # Measurement runs (raw.json, report.md, provenance.json) are tracked.
 !results/landscape/
 !results/feasibility/
+# Training runs (with checkpoints) and validation evaluations are tracked (D21).
+!results/training/
+!results/evaluation/
 # Every read of a test split (D17 §4, D19 §1) is tracked.
 !results/test_access_log.jsonl
 docs/ai_usage_log.md

@@ -1947,3 +1947,24 @@ recorded, failures included.
   also always reported, as the default and the D17 primary, whatever is
   selected.
 - **Epoch time:** measured on CPU and on MPS for the GNN and MLP.
+
+### D21 amendment 1 (2026-10-30, before the search was started)
+
+The epoch timing run (`results/training/epoch_timing/2026-10-30T063831Z-c35e7cd/`)
+gives about 100 s per GNN 64×3 epoch on the M4 CPU (MLP 0.3 s). At up to 30
+epochs, and more for the 128- and 6-layer GNNs, the 8 GNN configs need about
+6 h, twice the 3 h budget. Nothing has been trained on the full train split
+yet, so two procedural details are fixed now:
+
+- **Order.** WL, then MLP, then the GNN. Within a model, the cheapest size
+  first, and both learning rates at each size before the next size: 64×3,
+  128×3, 64×6, 128×6. In the original grid order, the budget would have
+  cut every lr = 3e-3 GNN config, so the lr would never have been searched.
+- **Hard budget.** The 3 h is checked at every epoch boundary, not only
+  between configs. A config that the budget stops mid-training is recorded
+  with its partial history as `stopped (budget)`, and is **not eligible for
+  selection**, because it did not finish the §3 protocol. The overrun is at
+  most one epoch.
+- **Device: CPU.** MPS is at most 1.4× faster per GNN epoch, and its
+  scatter-add is not deterministic, so seeded runs would not be exactly
+  reproducible.

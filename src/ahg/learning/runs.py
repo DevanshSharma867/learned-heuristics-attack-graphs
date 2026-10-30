@@ -38,20 +38,23 @@ def render(raw) -> str:
     return "\n".join(L) + "\n"
 
 
-def train_run(cfg: dict, name: str, batches=None, root: Path | None = None) -> tuple[Path, dict]:
-    """Train and write one run. batches: optional preloaded (train, val) to avoid reloading."""
+def train_run(cfg: dict, name: str, batches=None, root: Path | None = None,
+              deadline: float | None = None) -> tuple[Path, dict]:
+    """Train and write one run. batches: optional preloaded (train, val) to avoid reloading.
+    deadline: see train._early_stop; a run it cuts short has raw["stopped"] == "budget"."""
     t0 = time.perf_counter()
     train, val = batches or ([open_batch(ROOT / p) for p in cfg["train_batches"]],
                              [open_batch(ROOT / p) for p in cfg["val_batches"]])
     t1 = time.perf_counter()
-    model, history = train_model(cfg, train, val)
+    model, history = train_model(cfg, train, val, deadline)
     epochs = [e for e in history if "epoch" in e]
     raw = {"name": name, "config": cfg, "history": history, "wall_seconds": time.perf_counter() - t1,
            "load_seconds": t1 - t0,
            "encode_seconds": 0.0 if not epochs else time.perf_counter() - t1 - sum(
                e["epoch_seconds"] + e["val_seconds"] for e in epochs),
            "torch_threads": torch.get_num_threads(),
-           "best_val_loss": min(e["val_loss"] for e in epochs)}
+           "best_val_loss": min(e["val_loss"] for e in epochs),
+           "stopped": next((e["stopped"] for e in history if "stopped" in e), None)}
     out = write_run(name, raw, render(raw), [cfg["seed"]], cfg, root=root or TRAINING)
     save(model, cfg, out / "model.pt")
     return out, raw

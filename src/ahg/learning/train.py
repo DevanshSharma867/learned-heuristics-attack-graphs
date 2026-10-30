@@ -32,7 +32,7 @@ def _cat(xs):
     return torch.cat(xs) if len(xs) > 1 else xs[0]
 
 
-def _train_mlp(cfg, train, val, history):
+def _train_mlp(cfg, train, val, history, deadline=None):
     X = _cat([encode.mlp_matrix(b) for b in train])
     y = _cat([encode.targets(b) for b in train])
     Xv = _cat([encode.mlp_matrix(b) for b in val])
@@ -61,10 +61,10 @@ def _train_mlp(cfg, train, val, history):
         with torch.no_grad():
             return float(loss_fn(model(Xv), yv, cfg["loss"], cfg["w_over"]))
 
-    return _early_stop(model, epoch, val_loss, cfg, history)
+    return _early_stop(model, epoch, val_loss, cfg, history, deadline)
 
 
-def _train_gnn(cfg, train, val, history):
+def _train_gnn(cfg, train, val, history, deadline=None):
     dev = torch.device(cfg["device"])
     to = lambda gr: {**gr, "graph": {k: v.to(dev) for k, v in gr["graph"].items()}, "fx": gr["fx"].to(dev),
                      "y": gr["y"].to(dev)}
@@ -100,13 +100,19 @@ def _train_gnn(cfg, train, val, history):
                 n += len(g["y"])
         return total / n
 
-    return _early_stop(model, epoch, val_loss, cfg, history)
+    return _early_stop(model, epoch, val_loss, cfg, history, deadline)
 
 
-def _early_stop(model, epoch, val_loss, cfg, history):
-    """Train up to max_epochs; keep the weights of the best validation loss; stop after `patience` bad epochs."""
+def _early_stop(model, epoch, val_loss, cfg, history, deadline=None):
+    """Train up to max_epochs; keep the weights of the best validation loss; stop after `patience` bad epochs.
+
+    deadline: a time.time() past which no new epoch starts (the D21 §5 search budget).
+    """
     best, best_state, bad = float("inf"), None, 0
     for e in range(cfg["max_epochs"]):
+        if e > 0 and deadline is not None and time.time() >= deadline:
+            history.append({"stopped": "budget"})  # a search budget ran out (D21 §5): the run is partial
+            break
         t0 = time.perf_counter()
         tr = epoch()
         t_train = time.perf_counter() - t0
@@ -124,7 +130,7 @@ def _early_stop(model, epoch, val_loss, cfg, history):
     return model.cpu().eval()
 
 
-def _train_wl(cfg, train, val, history):
+def _train_wl(cfg, train, val, history, deadline=None):  # minutes, not hours: no deadline check
     hists = [h for b in train for h in encode.wl_histograms(b)]
     y = _cat([encode.targets(b) for b in train]).double()
     vocab: dict[str, int] = {}
@@ -150,14 +156,14 @@ def _train_wl(cfg, train, val, history):
     return WLLinear(vocab, beta, bias)
 
 
-def train_model(cfg: dict, train: list[LabelBatch], val: list[LabelBatch]):
+def train_model(cfg: dict, train: list[LabelBatch], val: list[LabelBatch], deadline: float | None = None):
     """Train one model; returns (model, history). cfg["kind"] in KINDS, cfg["loss"] in LOSSES."""
     if any(b.manifest["split"] != "train" for b in train) or any(b.manifest["split"] != "val" for b in val):
         raise ValueError("train_model takes train batches to fit and val batches to stop on, nothing else")
     torch.manual_seed(cfg["seed"])
     history: list[dict] = []
     fit = {"mlp": _train_mlp, "gnn": _train_gnn, "wl": _train_wl}[cfg["kind"]]
-    return fit(cfg, train, val, history), history
+    return fit(cfg, train, val, history, deadline), history
 
 
 def save(model, cfg: dict, path) -> None:

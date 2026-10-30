@@ -85,6 +85,12 @@ def test_training_is_seeded_and_checkpoints_round_trip(batches, kind, loss, tmp_
     assert p1 == pytest.approx(p2) and min(p1) >= 0
 
 
+def test_search_deadline_stops_after_one_epoch_and_is_marked(batches):
+    train, val = batches
+    _, history = train_model(make_config(kind="mlp", max_epochs=5, hidden=16), [train], [val], deadline=0.0)
+    assert sum("epoch" in e for e in history) == 1 and history[-1] == {"stopped": "budget"}
+
+
 def test_harness_checks_baselines_and_summarises(batches):
     train, val = batches
     cfg = make_config(kind="mlp", max_epochs=1, hidden=16)

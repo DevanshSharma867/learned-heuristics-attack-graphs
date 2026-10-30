@@ -1985,3 +1985,142 @@ GNN and MLP checkpoints (3.8 MB in all so far) stay tracked.
 | `results/training/search/wl-lam1.0-mse-s0/2026-10-30T064803Z-eea7a44` | `42c1379373c748090915de3476b374fd75933e009115a6322eac3462fc05ee10` |
 | `results/training/search/wl-lam10.0-mse-s0/2026-10-30T064947Z-eea7a44` | `3eeb81971b112a4f909b481a1f42e04eb2c740737bd7206c8c4bac6f5b2b2925` |
 | `results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44` | `edc61df5b494d9f79476758827640019da80dbeb46cace4602614cba11ee9b65` |
+
+## 2026-10-30 — D22: One pre-registered improvement round on validation; selection on expansions; stopping rule
+
+**Status: ADOPTED, 2026-10-30,** after the D21 pilot
+(`results/evaluation/val-pilot/2026-10-30T115154Z-c4d03e4/`) and before any
+D22 diagnostic or training is run. Validation only. **No test split is read
+in this round.**
+
+### 1. Why
+
+In the pilot, every learned model expanded more nodes than h_max on
+validation. The best was GNN 64×3 MSE: geometric-mean expansion ratio vs
+h_max 1.14, 95% CI [0.99, 1.32]. H1 is unsupported at the pilot stage. The
+pilot also shows that **validation loss does not predict search**: GNN 128×3
+had the lower validation MSE (2.82 vs 3.15) and won the D21 §5 search, but it
+expanded more nodes (1.19× vs 1.14× h_max). A model is used for search, so it
+is selected by search effort.
+
+### 2. Selection change (replaces D21 §5 selection)
+
+- Models and variants are selected by the **geometric-mean validation
+  expansion ratio vs h_max** (D21 §4 harness, 200k budget, budget hits
+  counted at the budget).
+- Training still early-stops on its own validation loss (D21 §3). Only the
+  choice between trained models changes.
+- Applied to the pilot, this selects GNN 64×3 MSE as the D22 base (1.14,
+  the lowest ratio of the 8 pilot models).
+
+### 3. Diagnostics (run first; cheap, local, validation)
+
+1. **Headroom.** Per val instance, the expansions of A\* with h\* itself, against
+   A\* with h_max and with LM-cut.
+   - h\*(s) comes from the val labels where labelled. Otherwise it is A\*+LM-cut
+     from s, the same solver the labels came from.
+   - D3 tie-breaking applies.
+   - Reported: the medians, the share of instances where h_max expands no
+     more than h\* ("h_max already optimal-effort"), and the geometric mean of
+     exp(h\*) / exp(h_max). The last is the ratio a heuristic as good as h\*
+     itself would reach under D3, a practical floor for the §5 criterion.
+2. **Sibling ordering.** For every labelled A\*-expanded val state, take its
+   labelled successors. A\* orders siblings by c(a) + h(s′), because g(s) is
+   shared, so that is the key.
+   - Over sibling pairs whose c(a) + h\*(s′) differ: concordant 1, tied 0.5,
+     discordant 0. The tie rate is reported separately.
+   - Heuristics: h_max, LM-cut, h_add, h_sp and every learned model. It is
+     compared with each model's validation MSE.
+   - It becomes part of the harness, so every later evaluation reports it.
+3. **Ties.** Learned h is continuous, so f-ties, and with them D3's
+   lower-h rule, almost never engage. Integer-cost baselines tie often.
+   - The pilot GNN and MLP models are re-run in A\* with h_θ rounded to the
+     nearest integer D9 unit (a control that should change nothing), and to
+     the nearest effort unit (38 D9 units), which creates ties.
+   - Diagnostic only: a rounded model is a variant only if pre-registered
+     here, and it is not.
+
+The base is GNN 64×3 unless the diagnostics show that a different
+*already-trained* pilot model has both a lower expansion ratio and higher
+sibling-ordering accuracy. None has a lower ratio, so in practice the base
+is fixed.
+
+### 4. Variants (one seed, 0; GNN 64×3 base; lr 1e-3; D21 §3 protocol otherwise)
+
+- **a. Residual target.** The GNN predicts r ≈ h\* − h_max in effort units.
+  - h_max is an input twice: per fact, a reachable flag and the h_max cost of
+    the fact, from one relaxed pass with every fact final; and as a global,
+    concatenated to the readout.
+  - Search uses h = h_max + max(0, r). Training is MSE on the raw r against
+    h\* − h_max ≥ 0. The clamp is applied at search time only, so negative raw
+    outputs still get a gradient.
+  - h_max computation is inside the timed search (rule 7).
+- **b. Max-combination,** at search time only, with no training:
+  h = max(h_max, h_θ).
+  - Applied to all 8 pilot models.
+  - For the residual model it is the identity (h ≥ h_max by construction),
+    so it is not run separately for that model, and the identity is
+    stated in the report.
+- **c. Ranking loss,** Chrestien, Edelkamp, Komenda & Pevný, NeurIPS 2023
+  (arXiv:2310.19463), the A\* loss L\* (their Eq. 2 and 4, α = β = 1). It is
+  implemented as written:
+  - One optimal plan per train instance: A\*+LM-cut from the initial state,
+    under D3 tie-breaking.
+  - For each plan state s_i (i ≥ 1), the off-path set is the open list O_i
+    of a search that expands exactly s_0 … s_{i−1}: every successor generated
+    so far that is not on the plan. Its g is the cheapest generating path
+    through expanded plan states. This includes the distance-one states
+    their experiments add.
+  - The loss is Σ_i Σ_{s_j ∈ O_i} log(1 + exp((g_i − g_j) + (h_i − h_j))),
+    summed over pairs as in their Eq. 4, with one problem instance per
+    minibatch as in their §6. Effort units; same Adam and GNN; early
+    stopping on the same loss over val plans.
+  - No h\* label is used: the model's scale is free.
+  - Deviations, recorded as such: the GNN (not STRIPS-HGN); Adam instead
+    of AdaBelief; plans from A\*+LM-cut (optimal) rather than SymBA\*/LAMA;
+    the D21 early-stopping protocol.
+- **d. Combination of a–c:** the residual architecture trained with the
+  ranking loss, h = h_max + softplus(r) in training (a strictly positive
+  residual keeps the gradient) and h_max + max(0, r) at search time. This
+  already includes b, because h ≥ h_max.
+- **6-layer GNN:** skipped unless budget remains (§5).
+
+### 5. Compute budget
+
+- **Training:** 5 h wall-clock in total on the M4 CPU, as a hard budget per
+  epoch (D21 amendment 1 rule). Order: a, c, d. A run the budget stops is
+  recorded and is not eligible.
+- **6-layer:** after a, c and d are evaluated, if at least 2 h of the training
+  budget remain, the best of {base, a, c, d} by the §2 rule is retrained at
+  64×6. Otherwise it is recorded as not run.
+- **Diagnostics and evaluations** are not budgeted by wall-clock. Each is one
+  run of a script and is logged.
+
+### 6. Stopping rule (fixed now)
+
+After this round:
+
+- If **no** variant (a, b on any pilot model, c, d, or the 6-layer if run)
+  reaches a validation expansion ratio vs h_max with a **bootstrap 95% CI
+  upper bound < 1**, then:
+  - the best variant by §2 is frozen;
+  - the D17 multi-seed plan is run with it anyway;
+  - **H1 is reported as unsupported.**
+- Otherwise, the best variant by §2 among those meeting the criterion is
+  frozen and taken to the multi-seed plan.
+- **Either way there is no further round of variants.**
+
+A variant that meets the criterion on val has been selected on val, so its
+val ratio is optimistic. The H1 claim rests only on the test splits.
+
+### 7. Reporting
+
+Every variant in this round is reported in the paper, including failures
+and anything not run, with the same columns:
+- expansion ratio vs h_max, LM-cut and h_sp (geometric mean and CI);
+- plan-cost ratio;
+- overestimation on walk vs A\* states;
+- time vs Python LM-cut;
+- sibling-ordering accuracy.
+
+The diagnostics are reported too.

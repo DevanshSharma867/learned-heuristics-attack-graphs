@@ -55,8 +55,8 @@ def parse_set(pairs: list[str]) -> dict:
 
 
 def run_name(cfg: dict) -> str:
-    size = f"-{cfg['hidden']}x{cfg['layers']}" if cfg["kind"] == "gnn" else (
-        f"-{cfg['hidden']}" if cfg["kind"] == "mlp" else f"-lam{cfg['lam']}")
+    size = f"-{cfg['hidden']}x{cfg['layers']}-lr{cfg['lr']:g}" if cfg["kind"] == "gnn" else (
+        f"-{cfg['hidden']}-lr{cfg['lr']:g}" if cfg["kind"] == "mlp" else f"-lam{cfg['lam']}")
     return f"{cfg['kind']}{size}-{cfg['loss']}-s{cfg['seed']}"
 
 

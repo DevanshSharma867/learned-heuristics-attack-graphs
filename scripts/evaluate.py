@@ -83,6 +83,8 @@ def main():
         name = model_name(run)
         learned.append(Learned(model, cfg, name))
         models.append({"name": name, "run": str(run), "model_sha256": hashlib.sha256((run / "model.pt").read_bytes()).hexdigest()})
+    if len({m["name"] for m in models}) != len(models):
+        raise SystemExit(f"model names must be unique: {[m['name'] for m in models]}")
     records = evaluate(batches, learned, BUDGET)
     raw = {"split": split, "batches": [b.manifest["batch_id"] for b in batches], "models": models,
            "instances": len(records), "torch_threads": torch.get_num_threads(), "budget": BUDGET,

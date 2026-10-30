@@ -165,11 +165,17 @@ Follow existing repo conventions where they exist; otherwise default to these.
 > Keep this section up to date. Replace placeholders after each milestone.
 
 - Proposal submitted (Oct 2026). Timeline: ~10 weeks from the week of 5 Oct 2026; final dates TBA.
-- Generator in use: `TODO (MulVAL / native)`
-- Implemented: `TODO`
-- Experiments run: `TODO`
-- Known issues: `TODO`
-- Next milestone: `TODO`
+- Generator in use: native (`src/ahg/attack_graph.py`); MulVAL not used.
+- Implemented: generator, classical heuristics (h0, h_max, h_add, h_sp, h_FF, LM-cut), A*/GBFS, D19 label
+  pipeline with cross-checks, models (MLP, WL-linear, GNN) and losses (`src/ahg/learning/`), the D21
+  harness (`src/ahg/evaluate.py`), `scripts/train.py`, `scripts/evaluate.py`.
+- Experiments run (as of 2026-10-30): C1 characterisation and its replication; labels for every split at
+  72e8821 (backup SHA-256 in the experiment log); D21 epoch timing, val hyperparameter search (11/15
+  configs in the 3 h budget), seed-0 pilot of every model × {MSE, asym}, val-pilot evaluation, cost projection.
+- Known issues: on val, no learned model yet expands fewer nodes than h_max or LM-cut (one seed, pilot).
+  WL vocabulary is ~1.9M colours (near graph-specific). 6-layer GNN configs never searched.
+- Next milestone: multi-seed training (D17 seed plan, ~32 M4-CPU-hours projected) on the HPC; decide on
+  the H1 situation before freezing models. No test split has been evaluated.
 
 ## 9. Key references (verified in proposal)
 Hart, Nilsson, Raphael 1968 (A*); Sheyner et al. 2002 (attack graphs); Ou et al. 2005 (MulVAL); Hoffmann 2015 (simulated pentesting); Shmaryahu et al. 2018 (pentesting as contingent planning); Agostinelli et al. 2019 (DeepCubeA); Shen, Trevizan, Thiébaux 2020 (STRIPS-HGN); NVD; FIRST CVSS. Add new ones only with a verifiable link.

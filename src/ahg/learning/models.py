@@ -31,18 +31,24 @@ class MLP(nn.Module):
 
 
 class GNN(nn.Module):
-    """Message passing over the fact-action graph; one instance's states per call (shared graph)."""
+    """Message passing over the fact-action graph; one instance's states per call (shared graph).
 
-    def __init__(self, hidden: int, layers: int):
+    fact_dim/global_dim > their defaults give the D22 residual model its h_max inputs (per-fact and
+    global); positive=False returns the raw output (the residual r), otherwise softplus(output) >= 0.
+    """
+
+    def __init__(self, hidden: int, layers: int, fact_dim: int = FACT_DIM, global_dim: int = 0,
+                 positive: bool = True):
         super().__init__()
-        self.enc_f = nn.Linear(FACT_DIM, hidden)
+        self.positive = positive
+        self.enc_f = nn.Linear(fact_dim, hidden)
         self.enc_a = nn.Linear(ACTION_DIM, hidden)
         self.up_a = nn.ModuleList(nn.Linear(2 * hidden, hidden) for _ in range(layers))
         self.up_f = nn.ModuleList(nn.Linear(2 * hidden, hidden) for _ in range(layers))
-        self.head = nn.Sequential(nn.Linear(3 * hidden, hidden), nn.ReLU(), nn.Linear(hidden, 1))
+        self.head = nn.Sequential(nn.Linear(3 * hidden + global_dim, hidden), nn.ReLU(), nn.Linear(hidden, 1))
 
-    def forward(self, fx, g):
-        """fx: [B, facts, 2]; g: dataset.static_graph of the instance."""
+    def forward(self, fx, g, glob=None):
+        """fx: [B, facts, fact_dim]; g: dataset.static_graph of the instance; glob: [B, global_dim] or None."""
         b, n_f, n_a = fx.shape[0], fx.shape[1], g["act_x"].shape[0]
         f = torch.relu(self.enc_f(fx))
         a = torch.relu(self.enc_a(g["act_x"])).expand(b, -1, -1)
@@ -53,8 +59,9 @@ class GNN(nn.Module):
             # A fact sees the mean of the actions that add it: the OR side.
             m_f = f.new_zeros(b, n_f, f.shape[2]).index_add_(1, g["add_dst"], a[:, g["add_src"]]) * g["inv_deg_add"]
             f = torch.relu(up_f(torch.cat([f, m_f], -1)))
-        out = self.head(torch.cat([f.mean(1), a.mean(1), f[:, g["goal"]].mean(1)], -1))
-        return softplus(out).squeeze(-1)
+        pooled = [f.mean(1), a.mean(1), f[:, g["goal"]].mean(1)] + ([glob] if glob is not None else [])
+        out = self.head(torch.cat(pooled, -1)).squeeze(-1)
+        return softplus(out) if self.positive else out
 
 
 class WLLinear:

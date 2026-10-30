@@ -11,15 +11,25 @@ import torch
 
 from ..cost import SCALE
 from ..dataset import mlp_features, static_graph, wl_colours
-from .encode import fact_bits
+from ..heuristics import hmax
+from .encode import fact_bits, gnn_inputs
 from .models import WLLinear
 
 
 class Learned:
-    def __init__(self, model, cfg: dict, name: str):
-        self.model, self.cfg, self.name = model, cfg, name
+    """combine="max_hmax": search with max(h_max, h_θ) (D22 variant b); h_max is then inside the timing."""
+
+    def __init__(self, model, cfg: dict, name: str, combine: str | None = None):
+        assert combine in (None, "max_hmax")
+        self.model, self.cfg, self.name, self.combine = model, cfg, name, combine
 
     def bind(self, inst):
+        h = self._bind(inst)
+        if self.combine == "max_hmax":
+            return lambda task, s: max(hmax(task, s), h(task, s))
+        return h
+
+    def _bind(self, inst):
         kind, model = self.cfg["kind"], self.model
         if kind == "wl":
             assert isinstance(model, WLLinear)
@@ -30,6 +40,15 @@ class Learned:
                     return SCALE * float(model(torch.tensor([mlp_features(task, s)], dtype=torch.float32)))
             return h
         graph = {}
+        if self.cfg.get("target", "hstar") == "residual":
+            def h(task, s):  # D22 a, d: h_max + max(0, r), with h_max computed here, inside the timing
+                if not graph:
+                    graph.update(static_graph(inst))
+                x = gnn_inputs(task, [s], residual=True)
+                with torch.no_grad():
+                    r = float(model(x["fx"], graph, x["glob"]))
+                return SCALE * (float(x["hm"][0]) + max(0.0, r))
+            return h
 
         def h(task, s):
             if not graph:

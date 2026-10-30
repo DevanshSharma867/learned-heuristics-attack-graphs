@@ -7,6 +7,8 @@ Usage:
       The D21 §5 grid (seed 0, MSE), cheapest models first. A config starts only while the
       wall-clock budget lasts; the rest are recorded as not run. Every config is recorded,
       failures included, and the per-kind selection is by validation MSE.
+  python scripts/train.py sequence --name NAME --budget-hours H --run "KEY=VALUE ..." [--run ...]
+      Several runs in order under one shared hard budget (D22 §5); every run recorded.
   python scripts/train.py timing [--epochs 2]
       Seconds per training epoch for the GNN and MLP, on CPU and on MPS (no checkpoint).
   python scripts/train.py project --timing RUN --primary RUN [RUN ...] --ablation RUN [RUN ...]
@@ -57,7 +59,8 @@ def parse_set(pairs: list[str]) -> dict:
 def run_name(cfg: dict) -> str:
     size = f"-{cfg['hidden']}x{cfg['layers']}-lr{cfg['lr']:g}" if cfg["kind"] == "gnn" else (
         f"-{cfg['hidden']}-lr{cfg['lr']:g}" if cfg["kind"] == "mlp" else f"-lam{cfg['lam']}")
-    return f"{cfg['kind']}{size}-{cfg['loss']}-s{cfg['seed']}"
+    kind = cfg["kind"] + ("res" if cfg.get("target", "hstar") == "residual" else "")  # D22 a, d
+    return f"{kind}{size}-{cfg['loss']}-s{cfg['seed']}"
 
 
 def load_batches(cfg):
@@ -70,29 +73,35 @@ def cmd_run(args):
     print(f"{out}  best val loss {raw['best_val_loss']:.4f}  {raw['wall_seconds']:.0f} s")
 
 
+def run_budgeted(configs: list[tuple[dict, dict]], deadline: float, batches, prefix: str) -> list[dict]:
+    """Train (overrides, config) pairs in order under one hard deadline; every config gets a row, failures included."""
+    rows = []
+    for over, cfg in configs:
+        row = {"kind": cfg["kind"], "overrides": over, "config": cfg}
+        if time.time() >= deadline:
+            rows.append({**row, "status": "not run (budget)"})
+            continue
+        try:
+            out, raw = train_run(cfg, f"{prefix}{run_name(cfg)}", batches, deadline=deadline)
+            # A run the budget cut short is recorded but never selected: it did not finish the protocol.
+            row.update(status="stopped (budget)" if raw["stopped"] else "ok",
+                       best_val_loss=raw["best_val_loss"], seconds=raw["wall_seconds"],
+                       epochs=sum("epoch" in e for e in raw["history"]), run=str(out.relative_to(ROOT)))
+        except Exception as e:  # recorded, never dropped (D21 §5)
+            row.update(status="failed", error=f"{type(e).__name__}: {e}", traceback=traceback.format_exc())
+        rows.append(row)
+        print(cfg["kind"], over, row["status"], row.get("best_val_loss"), flush=True)
+    return rows
+
+
 def cmd_search(args):
     base = parse_set(args.set)
     batches = load_batches(make_config(**base))
     t0 = time.time()
     deadline = t0 + args.budget_hours * 3600  # hard: a running config stops at its next epoch boundary
-    rows = []
-    for kind, configs in GRID.items():
-        for over in configs:
-            cfg = make_config(**{**base, "kind": kind, "loss": "mse", "seed": 0, **over})
-            row = {"kind": kind, "overrides": over, "config": cfg}
-            if time.time() >= deadline:
-                rows.append({**row, "status": "not run (budget)"})
-                continue
-            try:
-                out, raw = train_run(cfg, f"search/{run_name(cfg)}", batches, deadline=deadline)
-                # A run the budget cut short is recorded but never selected: it did not finish the protocol.
-                row.update(status="stopped (budget)" if raw["stopped"] else "ok",
-                           best_val_loss=raw["best_val_loss"], seconds=raw["wall_seconds"],
-                           epochs=sum("epoch" in e for e in raw["history"]), run=str(out.relative_to(ROOT)))
-            except Exception as e:  # recorded, never dropped (D21 §5)
-                row.update(status="failed", error=f"{type(e).__name__}: {e}", traceback=traceback.format_exc())
-            rows.append(row)
-            print(kind, over, row["status"], row.get("best_val_loss"), flush=True)
+    configs = [(over, make_config(**{**base, "kind": kind, "loss": "mse", "seed": 0, **over}))
+               for kind, overs in GRID.items() for over in overs]
+    rows = run_budgeted(configs, deadline, batches, "search/")
     selected = {}
     for kind in GRID:
         ok = [r for r in rows if r["kind"] == kind and r["status"] == "ok"]
@@ -103,6 +112,24 @@ def cmd_search(args):
            "rows": rows, "selected": selected}
     out = write_run("hpsearch", raw, render_search(raw), [0], {"base": base, "grid": GRID}, root=TRAINING)
     print(out)
+
+
+def cmd_sequence(args):
+    """Several runs under one shared budget (D22 §5). --run "k=v k=v" per run, in order; no selection here
+    (D22 selects on validation expansions, with scripts/evaluate.py)."""
+    configs = [(over, make_config(**over)) for over in (parse_set(r.split()) for r in args.run)]
+    batches = load_batches(configs[0][1])
+    t0 = time.time()
+    rows = run_budgeted(configs, t0 + args.budget_hours * 3600, batches, f"{args.name}/")
+    raw = {"budget_hours": args.budget_hours, "elapsed_seconds": time.time() - t0, "rows": rows}
+    L = [f"# {args.name}: {len(rows)} runs under one {args.budget_hours} h budget", "",
+         f"Elapsed {raw['elapsed_seconds'] / 3600:.2f} h.", "",
+         "| overrides | status | best val loss | epochs | seconds | run |", "|---|---|---|---|---|---|"]
+    L += [f"| `{json.dumps(r['overrides'])}` | {r['status']} | "
+          f"{r['best_val_loss']:.4f} | {r['epochs']} | {r['seconds']:.0f} | {r['run']} |" if "run" in r else
+          f"| `{json.dumps(r['overrides'])}` | {r['status']} | — | — | — | {r.get('error', '')} |" for r in rows]
+    print(write_run(args.name, raw, "\n".join(L) + "\n", [r["config"]["seed"] for r in rows],
+                    {"runs": [r["overrides"] for r in rows]}, root=TRAINING))
 
 
 def render_search(raw) -> str:
@@ -181,6 +208,10 @@ def main():
     p = sub.add_parser("search")
     p.add_argument("--budget-hours", type=float, default=3.0)
     p.add_argument("--set", action="append", default=[])
+    p = sub.add_parser("sequence")
+    p.add_argument("--name", required=True)
+    p.add_argument("--budget-hours", type=float, required=True)
+    p.add_argument("--run", action="append", required=True)
     p = sub.add_parser("timing")
     p.add_argument("--epochs", type=int, default=2)
     p = sub.add_parser("project")
@@ -188,7 +219,8 @@ def main():
     p.add_argument("--primary", type=Path, nargs="+", required=True)
     p.add_argument("--ablation", type=Path, nargs="+", required=True)
     args = ap.parse_args()
-    {"run": cmd_run, "search": cmd_search, "timing": cmd_timing, "project": cmd_project}[args.cmd](args)
+    {"run": cmd_run, "search": cmd_search, "sequence": cmd_sequence, "timing": cmd_timing,
+     "project": cmd_project}[args.cmd](args)
 
 
 if __name__ == "__main__":

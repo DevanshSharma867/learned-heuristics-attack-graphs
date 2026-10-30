@@ -10,6 +10,7 @@ import random
 import time
 
 import torch
+from torch.nn.functional import softplus
 
 from ..cost import SCALE
 from ..dataset import LabelBatch
@@ -17,7 +18,7 @@ from . import encode
 from .models import GNN, MLP, WLLinear, fit_ridge, sparse_matrix
 
 KINDS = ("mlp", "wl", "gnn")
-LOSSES = ("mse", "asym")
+LOSSES = ("mse", "asym", "rank")  # rank: GNN only (D22 c, d)
 
 
 def loss_fn(pred, y, loss: str, w_over: float):
@@ -64,16 +65,34 @@ def _train_mlp(cfg, train, val, history, deadline=None):
     return _early_stop(model, epoch, val_loss, cfg, history, deadline)
 
 
+def rank_loss(h, g):
+    """Chrestien et al. (2023) Eq. 4 with alpha = beta = 1: sum over pairs of log(1 + exp(f(s_i) - f(s_j))),
+    f = g + h, for one instance; s_i is a plan state and s_j an off-plan state of its open list."""
+    return softplus(g["dg"] + h[g["pi"]] - h[g["pj"]]).sum()
+
+
+def gnn_h(model, g, residual: bool, sl=slice(None)):
+    """Raw model output for states sl of group g (the residual r, or h itself)."""
+    return model(g["fx"][sl], g["graph"], g["glob"][sl] if residual else None)
+
+
 def _train_gnn(cfg, train, val, history, deadline=None):
     dev = torch.device(cfg["device"])
-    to = lambda gr: {**gr, "graph": {k: v.to(dev) for k, v in gr["graph"].items()}, "fx": gr["fx"].to(dev),
-                     "y": gr["y"].to(dev)}
-    groups = [to(g) for b in train for g in encode.gnn_groups(b)]
-    vgroups = [to(g) for b in val for g in encode.gnn_groups(b)]
-    model = GNN(cfg["hidden"], cfg["layers"]).to(dev)
+    residual, rank = cfg.get("target", "hstar") == "residual", cfg["loss"] == "rank"
+    move = lambda gr: {k: ({kk: vv.to(dev) for kk, vv in v.items()} if k == "graph" else
+                           v.to(dev) if torch.is_tensor(v) else v) for k, v in gr.items()}
+    enc = encode.rank_groups if rank else encode.gnn_groups
+    groups = [move(g) for b in train for g in enc(b, residual=residual)]
+    vgroups = [move(g) for b in val for g in enc(b, residual=residual)]
+    model = new_gnn(cfg).to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=cfg["lr"])
     rng = random.Random(f"train:{cfg['seed']}")
     chunk = cfg["batch_size"]
+
+    def group_rank_loss(g):
+        out = gnn_h(model, g, residual)
+        # Variant d trains h = h_max + softplus(r): a strictly positive residual keeps the gradient (D22 §4).
+        return rank_loss(g["hm"] + softplus(out) if residual else out, g)
 
     def epoch():
         model.train()
@@ -82,13 +101,20 @@ def _train_gnn(cfg, train, val, history, deadline=None):
         total = n = 0
         for gi in order:
             g = groups[gi]
-            for s in range(0, len(g["y"]), chunk):
-                fx, y = g["fx"][s:s + chunk], g["y"][s:s + chunk]
-                loss = loss_fn(model(fx, g["graph"]), y, cfg["loss"], cfg["w_over"])
+            if rank:  # one instance per minibatch, all its pairs (Chrestien et al. §6)
+                loss = group_rank_loss(g)
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
-                total, n = total + float(loss) * len(y), n + len(y)
+                total, n = total + float(loss), n + 1
+                continue
+            for s in range(0, len(g["y"]), chunk):
+                sl = slice(s, s + chunk)
+                loss = loss_fn(gnn_h(model, g, residual, sl), g["y"][sl], cfg["loss"], cfg["w_over"])
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+                total, n = total + float(loss) * len(g["y"][sl]), n + len(g["y"][sl])
         return total / n
 
     def val_loss():
@@ -96,11 +122,21 @@ def _train_gnn(cfg, train, val, history, deadline=None):
         total = n = 0
         with torch.no_grad():
             for g in vgroups:
-                total += float(loss_fn(model(g["fx"], g["graph"]), g["y"], cfg["loss"], cfg["w_over"])) * len(g["y"])
-                n += len(g["y"])
+                if rank:  # mean over instances of the per-instance summed loss
+                    total, n = total + float(group_rank_loss(g)), n + 1
+                else:
+                    total += float(loss_fn(gnn_h(model, g, residual), g["y"], cfg["loss"], cfg["w_over"])) * len(g["y"])
+                    n += len(g["y"])
         return total / n
 
     return _early_stop(model, epoch, val_loss, cfg, history, deadline)
+
+
+def new_gnn(cfg: dict) -> GNN:
+    """The GNN a config describes; the residual target (D22 a, d) adds the h_max inputs and a raw output."""
+    if cfg.get("target", "hstar") == "residual":
+        return GNN(cfg["hidden"], cfg["layers"], fact_dim=4, global_dim=1, positive=False)
+    return GNN(cfg["hidden"], cfg["layers"])
 
 
 def _early_stop(model, epoch, val_loss, cfg, history, deadline=None):
@@ -160,6 +196,8 @@ def train_model(cfg: dict, train: list[LabelBatch], val: list[LabelBatch], deadl
     """Train one model; returns (model, history). cfg["kind"] in KINDS, cfg["loss"] in LOSSES."""
     if any(b.manifest["split"] != "train" for b in train) or any(b.manifest["split"] != "val" for b in val):
         raise ValueError("train_model takes train batches to fit and val batches to stop on, nothing else")
+    if cfg["kind"] != "gnn" and (cfg["loss"] == "rank" or cfg.get("target", "hstar") != "hstar"):
+        raise ValueError("the ranking loss and the residual target are implemented for the GNN only (D22)")
     torch.manual_seed(cfg["seed"])
     history: list[dict] = []
     fit = {"mlp": _train_mlp, "gnn": _train_gnn, "wl": _train_wl}[cfg["kind"]]
@@ -179,7 +217,7 @@ def load(path):
     if ck["kind"] == "mlp":
         model = MLP(sd["mean"].shape[0], cfg["hidden"], sd["mean"], sd["std"])
     else:
-        model = GNN(cfg["hidden"], cfg["layers"])
+        model = new_gnn(cfg)
     model.load_state_dict(sd)
     return model.eval(), cfg
 

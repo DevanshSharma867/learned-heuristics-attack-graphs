@@ -1,10 +1,11 @@
 """Run the D21 §4 harness: every baseline and every given model in A* on one split's label batches.
 
 Usage:
-  python scripts/evaluate.py --batches DIR [DIR ...] --models RUN [RUN ...] [--name NAME]
+  python scripts/evaluate.py --batches DIR [DIR ...] --models RUN [RUN ...] [--max-hmax RUN ...] [--name NAME]
                              [--purpose evaluation --permitted-by D-ENTRY]
 
   RUN: a results/training/ run folder (its model.pt is loaded).
+  --max-hmax RUN: also search with max(h_max, h_θ) for that model, named <model>+max (D22 variant b).
   A test-split batch is opened only with --purpose; open_batch logs the read in
   results/test_access_log.jsonl before anything is loaded, and refuses a second
   evaluation of a split without --permitted-by.
@@ -39,6 +40,11 @@ def fmt(ci) -> str:
     return "—" if ci is None else f"{ci[0]:.3f} [{ci[1]:.3f}, {ci[2]:.3f}]"
 
 
+def order(v) -> str:
+    o = v.get("sibling_order")
+    return "—" if not o or o["accuracy"] is None else f"{o['accuracy']:.3f} ({o['tie_rate']:.3f}, {o['pairs']})"
+
+
 def render(raw) -> str:
     s, split = raw["summary"], raw["split"]
     L = [f"# evaluation on {split} (D21 §4)", "", f"{raw['instances']} labelled instances; budget {BUDGET:,} "
@@ -49,10 +55,10 @@ def render(raw) -> str:
     L += ["", "## End-to-end time", "", "| model | " + " | ".join(BASELINES) + " |", "|---|" + "---|" * len(BASELINES)]
     L += [f"| {m} | " + " | ".join(fmt(v["vs"][b]["time"]) for b in BASELINES) + " |" for m, v in s.items()]
     L += ["", "## Plan cost and coverage", "",
-          "| model | solved | budget hits | optimal | plan cost / h* | fewer / more expansions than LM-cut |",
-          "|---|---|---|---|---|---|"]
+          "| model | solved | budget hits | optimal | plan cost / h* | fewer / more expansions than LM-cut | "
+          "sibling order acc. (tie rate, pairs) |", "|---|---|---|---|---|---|---|"]
     L += [f"| {m} | {v['solved']}/{v['instances']} | {v['budget_hits']} | {v['optimal']} | {fmt(v['plan_cost'])} | "
-          f"{v['vs']['lmcut']['fewer']} / {v['vs']['lmcut']['more']} |" for m, v in s.items()]
+          f"{v['vs']['lmcut']['fewer']} / {v['vs']['lmcut']['more']} | {order(v)} |" for m, v in s.items()]
     L += ["", "## Overestimation (effort units)", "", "| model | states | rate h_θ > h* | mean violation | "
           "max violation | mean abs error |", "|---|---|---|---|---|---|"]
     for m, v in s.items():
@@ -67,6 +73,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--batches", type=Path, nargs="+", required=True)
     ap.add_argument("--models", type=Path, nargs="+", required=True)
+    ap.add_argument("--max-hmax", type=Path, nargs="*", default=[])
     ap.add_argument("--name")
     ap.add_argument("--purpose")
     ap.add_argument("--permitted-by")
@@ -78,11 +85,12 @@ def main():
         raise SystemExit(f"one split per evaluation, got {sorted(splits)}")
     split = splits.pop()
     learned, models = [], []
-    for run in args.models:
+    for run, combine in [(r, None) for r in args.models] + [(r, "max_hmax") for r in args.max_hmax]:
         model, cfg = load(run / "model.pt")
-        name = model_name(run)
-        learned.append(Learned(model, cfg, name))
-        models.append({"name": name, "run": str(run), "model_sha256": hashlib.sha256((run / "model.pt").read_bytes()).hexdigest()})
+        name = model_name(run) + ("+max" if combine else "")
+        learned.append(Learned(model, cfg, name, combine))
+        models.append({"name": name, "run": str(run), "combine": combine,
+                       "model_sha256": hashlib.sha256((run / "model.pt").read_bytes()).hexdigest()})
     if len({m["name"] for m in models}) != len(models):
         raise SystemExit(f"model names must be unique: {[m['name'] for m in models]}")
     records = evaluate(batches, learned, BUDGET)

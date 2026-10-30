@@ -5,16 +5,18 @@ import math
 import pytest
 import torch
 
+from ahg.cost import SCALE
 from ahg.dataset import fact_features, open_batch
-from ahg.evaluate import BASELINES, _geo_ci, evaluate, summarise
-from ahg.heuristics import ADMISSIBLE
+from ahg.evaluate import BASELINES, _geo_ci, evaluate, sibling_groups, sibling_order, summarise
+from ahg.heuristics import ADMISSIBLE, hmax, lmcut
 from ahg.labels import write_batch
 from ahg.learning import encode
-from ahg.learning.encode import fact_bits
+from ahg.learning.encode import fact_bits, plan_open_pairs
 from ahg.learning.heuristic import Learned
 from ahg.learning.models import fit_ridge
 from ahg.learning.runs import make_config
 from ahg.learning.train import load, loss_fn, save, train_model
+from ahg.search import astar
 from test_labels import CFG
 
 
@@ -109,3 +111,51 @@ def test_harness_checks_baselines_and_summarises(batches):
 
 def test_bootstrap_ci_of_a_constant_is_that_constant():
     assert _geo_ci([math.log(2.0)] * 10, "k") == pytest.approx([2.0, 2.0, 2.0])
+
+
+def test_hstar_satisfies_every_ranking_pair(batches):
+    """With h = h*, f(s_i) = h*(s_0) on the plan and f(s_j) >= h*(s_0) off it: no pair may have f_i > f_j."""
+    train, _ = batches
+    task = train.instances[train.examples[0].instance].task
+    states, pairs = plan_open_pairs(task)
+    hstar = [astar(task, lmcut, start=s).cost / SCALE for s in states]
+    assert pairs and all(dg + hstar[i] - hstar[j] <= 1e-9 for i, j, dg in pairs)
+
+
+def test_sibling_order_is_perfect_for_hstar_and_all_ties_for_a_constant(batches):
+    _, val = batches
+    exs = [ex for ex in val.examples if ex.instance == val.examples[0].instance]
+    task = val.task(exs[0])
+    groups = sibling_groups(task, exs)
+    states = {s for grp in groups for _, s, _ in grp}
+    star = sibling_order(groups, {ex.state: ex.hstar for ex in exs})
+    assert star["pairs"] > 0 and star["concordant"] == star["pairs"]
+    flat = sibling_order(groups, {s: 0.0 for s in states})
+    assert flat["pairs"] == star["pairs"]
+    # A constant h orders siblings by action cost alone: pairs of equal cost become ties.
+    assert flat["concordant"] + flat["ties"] <= flat["pairs"]
+
+
+@pytest.mark.parametrize("over", [{"target": "residual", "loss": "mse"}, {"loss": "rank"},
+                                  {"target": "residual", "loss": "rank"}])
+def test_d22_variants_train_and_never_go_below_hmax_when_residual(batches, over, tmp_path):
+    train, val = batches
+    cfg = make_config(kind="gnn", max_epochs=2, hidden=16, layers=2, **over)
+    model, history = train_model(cfg, [train], [val])
+    assert sum("epoch" in e for e in history) >= 1
+    save(model, cfg, tmp_path / "model.pt")
+    model2, cfg2 = load(tmp_path / "model.pt")
+    inst = val.instances[val.examples[0].instance]
+    states = [ex.state for ex in val.examples if ex.instance == val.examples[0].instance][:20]
+    for combine in (None, "max_hmax"):
+        h = Learned(model2, cfg2, "m", combine).bind(inst)
+        vals = [h(inst.task, s) for s in states]
+        assert min(vals) >= 0
+        if over.get("target") == "residual" or combine:
+            assert all(v >= hmax(inst.task, s) - 1e-6 for v, s in zip(vals, states))
+
+
+def test_rank_and_residual_are_gnn_only(batches):
+    train, val = batches
+    with pytest.raises(ValueError):
+        train_model(make_config(kind="mlp", loss="rank"), [train], [val])

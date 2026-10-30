@@ -9,9 +9,9 @@ Usage:
       failures included, and the per-kind selection is by validation MSE.
   python scripts/train.py timing [--epochs 2]
       Seconds per training epoch for the GNN and MLP, on CPU and on MPS (no checkpoint).
-  python scripts/train.py project --timing RUN --runs RUN [RUN ...]
-      Projects the D17 seed plan's training cost from a timing run and the epochs the given
-      pilot runs actually took before early stopping.
+  python scripts/train.py project --timing RUN --primary RUN [RUN ...] --ablation RUN [RUN ...]
+      Projects the D17 seed plan's training cost from the wall time of the given pilot runs
+      (selected configs; the config the ablation grid is priced at) and the timing run.
 
 Runs go to results/training/<name>/<stamp>-<commit>/ through runlog (append-only).
 """
@@ -39,8 +39,8 @@ GRID = {
             for (h, l), lr in itertools.product(((64, 3), (128, 3), (64, 6), (128, 6)), (1e-3, 3e-3))],
 }
 # The D17 §4 seed plan, used only for the projection: primary models × {MSE, asym} × 5 seeds;
-# about 30 ablation runs (D17 §5) of the GNN at 3 seeds.
-PLAN = {"gnn": 2 * 5, "mlp": 2 * 5, "gnn_ablation": 30}
+# about 30 ablation runs in all (D17 §5), priced at the GNN 64×3.
+PLAN = {"gnn": 2 * 5, "mlp": 2 * 5, "wl": 2, "gnn_ablation": 30}  # WL is deterministic: one run per loss
 
 
 def parse_set(pairs: list[str]) -> dict:
@@ -139,33 +139,35 @@ def cmd_timing(args):
 
 
 def cmd_project(args):
-    """Training cost of the D17 seed plan: runs × mean epochs taken in the pilot × best measured s/epoch."""
-    timing = load_raw(args.timing)
-    per_epoch = {}  # fastest device per kind: (device, train + val seconds per epoch)
-    for r in timing["rows"]:
-        s = sum(r["epoch_seconds"]) / len(r["epoch_seconds"]) + sum(r["val_seconds"]) / len(r["val_seconds"])
-        if r["kind"] not in per_epoch or s < per_epoch[r["kind"]][1]:
-            per_epoch[r["kind"]] = (r["device"], s)
-    epochs: dict[str, list[int]] = {}
-    for run in args.runs:
-        raw = load_raw(run)
-        if raw["config"]["kind"] in per_epoch:
-            epochs.setdefault(raw["config"]["kind"], []).append(sum("epoch" in e for e in raw["history"]))
-    rows, total = [], 0.0
-    for item, n_runs in PLAN.items():
-        kind = item.split("_")[0]
-        ep = sum(epochs[kind]) / len(epochs[kind])
-        dev, s = per_epoch[kind]
-        hours = n_runs * ep * s / 3600
-        total += hours
-        rows.append({"item": item, "runs": n_runs, "mean_epochs": ep, "device": dev, "s_per_epoch": s, "hours": hours})
-    raw = {"timing_run": str(args.timing), "pilot_runs": [str(r) for r in args.runs], "rows": rows, "total_hours": total}
-    L = ["# training-cost projection (D17 seed plan)", "", "Ablations are costed at the 64×3 GNN epoch time "
-         "(128×6 runs cost more).", "", "| item | runs | mean epochs (pilot) | device | s/epoch | hours |",
-         "|---|---|---|---|---|---|"]
-    L += [f"| {r['item']} | {r['runs']} | {r['mean_epochs']:.1f} | {r['device']} | {r['s_per_epoch']:.1f} | "
-          f"{r['hours']:.2f} |" for r in rows]
-    L += ["", f"Total: {total:.1f} h sequential on one M4 process."]
+    """Training cost of the D17 seed plan, priced at the mean wall time of the pilot runs of each config.
+
+    --primary RUN... are pilot runs of the selected configs (gnn, mlp, wl), --ablation RUN... are runs of
+    the config the ablation grid is priced at. The timing run gives the CPU-vs-MPS speedup per epoch.
+    """
+    def mean_hours(runs):
+        return sum(load_raw(r)["wall_seconds"] for r in runs) / len(runs) / 3600
+
+    by_kind: dict[str, list[Path]] = {}
+    for r in args.primary:
+        by_kind.setdefault(load_raw(r)["config"]["kind"], []).append(r)
+    rows = [{"item": k, "runs": PLAN[k], "pilot_runs": [str(r) for r in rs], "hours_per_run": mean_hours(rs)}
+            for k, rs in by_kind.items()]
+    rows.append({"item": "gnn_ablation", "runs": PLAN["gnn_ablation"], "pilot_runs": [str(r) for r in args.ablation],
+                 "hours_per_run": mean_hours(args.ablation)})
+    for r in rows:
+        r["hours"] = r["runs"] * r["hours_per_run"]
+    total = sum(r["hours"] for r in rows)
+    epoch = {}  # (kind, device) -> mean train + val seconds per epoch
+    for t in load_raw(args.timing)["rows"]:
+        epoch[t["kind"], t["device"]] = (sum(t["epoch_seconds"]) + sum(t["val_seconds"])) / len(t["epoch_seconds"])
+    raw = {"timing_run": str(args.timing), "rows": rows, "total_hours": total,
+           "epoch_seconds": {f"{k}/{d}": v for (k, d), v in epoch.items()}}
+    L = ["# training-cost projection (D17 seed plan)", "", "Priced at the mean training wall time (label loading excluded; "
+         "encoding included where it was not cached yet) of the pilot runs of each config, sequential on one M4 CPU process.", "",
+         "| item | runs | h per run (pilot) | hours |", "|---|---|---|---|"]
+    L += [f"| {r['item']} | {r['runs']} | {r['hours_per_run']:.2f} | {r['hours']:.1f} |" for r in rows]
+    L += ["", f"Total: {total:.1f} h.", "", "Seconds per epoch, train + val (timing run):", ""]
+    L += [f"- {k} on {d}: {v:.1f}" for (k, d), v in sorted(epoch.items())]
     print("\n".join(L))
     print(write_run("projection", raw, "\n".join(L) + "\n", [], {"plan": PLAN}, root=TRAINING))
 
@@ -183,7 +185,8 @@ def main():
     p.add_argument("--epochs", type=int, default=2)
     p = sub.add_parser("project")
     p.add_argument("--timing", type=Path, required=True)
-    p.add_argument("--runs", type=Path, nargs="+", required=True)
+    p.add_argument("--primary", type=Path, nargs="+", required=True)
+    p.add_argument("--ablation", type=Path, nargs="+", required=True)
     args = ap.parse_args()
     {"run": cmd_run, "search": cmd_search, "timing": cmd_timing, "project": cmd_project}[args.cmd](args)
 

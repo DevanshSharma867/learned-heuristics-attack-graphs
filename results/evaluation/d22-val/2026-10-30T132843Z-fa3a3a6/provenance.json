@@ -1,0 +1,183 @@
+{
+ "date_utc": "2026-10-30T13:28:43+00:00",
+ "git_commit": "fa3a3a6f4d712fb669bbe03debb7e010fd69502b",
+ "git_dirty": false,
+ "argv": [
+  "scripts/evaluate.py",
+  "--name",
+  "d22-val",
+  "--batches",
+  "data/labels/val-677e9fe4-72e8821",
+  "--models",
+  "results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9",
+  "results/training/d22/gnn-64x3-lr0.001-rank-s0/2026-10-30T130648Z-27adeb9",
+  "results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9",
+  "results/training/search/wl-lam0.1-mse-s0/2026-10-30T064612Z-eea7a44",
+  "results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44",
+  "results/training/search/mlp-64-mse-s0/2026-10-30T064954Z-eea7a44",
+  "results/training/mlp-64-asym-s0/2026-10-30T094144Z-eea7a44",
+  "results/training/search/gnn-64x3-mse-s0/2026-10-30T072601Z-eea7a44",
+  "results/training/gnn-64x3-asym-s0/2026-10-30T102529Z-eea7a44",
+  "results/training/search/gnn-128x3-mse-s0/2026-10-30T091259Z-eea7a44",
+  "results/training/gnn-128x3-asym-s0/2026-10-30T114945Z-eea7a44",
+  "--max-hmax",
+  "results/training/search/wl-lam0.1-mse-s0/2026-10-30T064612Z-eea7a44",
+  "results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44",
+  "results/training/search/mlp-64-mse-s0/2026-10-30T064954Z-eea7a44",
+  "results/training/mlp-64-asym-s0/2026-10-30T094144Z-eea7a44",
+  "results/training/search/gnn-64x3-mse-s0/2026-10-30T072601Z-eea7a44",
+  "results/training/gnn-64x3-asym-s0/2026-10-30T102529Z-eea7a44",
+  "results/training/search/gnn-128x3-mse-s0/2026-10-30T091259Z-eea7a44",
+  "results/training/gnn-128x3-asym-s0/2026-10-30T114945Z-eea7a44"
+ ],
+ "seeds": [],
+ "config": {
+  "batches": [
+   "val-677e9fe4-72e8821"
+  ],
+  "models": [
+   {
+    "name": "d22/gnnres-64x3-lr0.001-mse-s0",
+    "run": "results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9",
+    "combine": null,
+    "model_sha256": "a1501e53d9c3510d219e2f38faa6a3368d7ee1e94eeeb0829659809557cb6449"
+   },
+   {
+    "name": "d22/gnn-64x3-lr0.001-rank-s0",
+    "run": "results/training/d22/gnn-64x3-lr0.001-rank-s0/2026-10-30T130648Z-27adeb9",
+    "combine": null,
+    "model_sha256": "36bd0261774137462b9d285a8d569ae61b75eb99c41ff58f92f9b8ebde3d1b9a"
+   },
+   {
+    "name": "d22/gnnres-64x3-lr0.001-rank-s0",
+    "run": "results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9",
+    "combine": null,
+    "model_sha256": "2707388962e85eeeede907c841900737fa1f37cbbc8d9560e4eb6998f0a867ad"
+   },
+   {
+    "name": "wl-lam0.1-mse-s0",
+    "run": "results/training/search/wl-lam0.1-mse-s0/2026-10-30T064612Z-eea7a44",
+    "combine": null,
+    "model_sha256": "3aff6fff7541131cf9cdfec653360215e3c58442194e69899283fcdc438193a7"
+   },
+   {
+    "name": "wl-lam0.1-asym-s0",
+    "run": "results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44",
+    "combine": null,
+    "model_sha256": "edc61df5b494d9f79476758827640019da80dbeb46cace4602614cba11ee9b65"
+   },
+   {
+    "name": "mlp-64-mse-s0",
+    "run": "results/training/search/mlp-64-mse-s0/2026-10-30T064954Z-eea7a44",
+    "combine": null,
+    "model_sha256": "7b17589b42b450122f20b4bce70110ef91528d8604ebb887ac0c4c90d846675f"
+   },
+   {
+    "name": "mlp-64-asym-s0",
+    "run": "results/training/mlp-64-asym-s0/2026-10-30T094144Z-eea7a44",
+    "combine": null,
+    "model_sha256": "a2b67bf1d7a7dc97a63ddcbf600465b56c9dba5306921692d84ce7d54f597f2b"
+   },
+   {
+    "name": "gnn-64x3-mse-s0",
+    "run": "results/training/search/gnn-64x3-mse-s0/2026-10-30T072601Z-eea7a44",
+    "combine": null,
+    "model_sha256": "0836f53fb235466c9fed24f05feb7b26e72f43ac001099742145e6b74ff13898"
+   },
+   {
+    "name": "gnn-64x3-asym-s0",
+    "run": "results/training/gnn-64x3-asym-s0/2026-10-30T102529Z-eea7a44",
+    "combine": null,
+    "model_sha256": "88a7eab8e1d9b0343e9f26b7a3a58259f5b6de9cf158261bde0f6f8b0328aa87"
+   },
+   {
+    "name": "gnn-128x3-mse-s0",
+    "run": "results/training/search/gnn-128x3-mse-s0/2026-10-30T091259Z-eea7a44",
+    "combine": null,
+    "model_sha256": "00383ccae5c34f76d5ed450eae9ba09127dd8f1c879988ce0f6a0fa7a20e9689"
+   },
+   {
+    "name": "gnn-128x3-asym-s0",
+    "run": "results/training/gnn-128x3-asym-s0/2026-10-30T114945Z-eea7a44",
+    "combine": null,
+    "model_sha256": "a2bdd82878fb33862e34d6aeb53e0bd2c007e096b5145f329725bfbdcab61799"
+   },
+   {
+    "name": "wl-lam0.1-mse-s0+max",
+    "run": "results/training/search/wl-lam0.1-mse-s0/2026-10-30T064612Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "3aff6fff7541131cf9cdfec653360215e3c58442194e69899283fcdc438193a7"
+   },
+   {
+    "name": "wl-lam0.1-asym-s0+max",
+    "run": "results/training/wl-lam0.1-asym-s0/2026-10-30T094750Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "edc61df5b494d9f79476758827640019da80dbeb46cace4602614cba11ee9b65"
+   },
+   {
+    "name": "mlp-64-mse-s0+max",
+    "run": "results/training/search/mlp-64-mse-s0/2026-10-30T064954Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "7b17589b42b450122f20b4bce70110ef91528d8604ebb887ac0c4c90d846675f"
+   },
+   {
+    "name": "mlp-64-asym-s0+max",
+    "run": "results/training/mlp-64-asym-s0/2026-10-30T094144Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "a2b67bf1d7a7dc97a63ddcbf600465b56c9dba5306921692d84ce7d54f597f2b"
+   },
+   {
+    "name": "gnn-64x3-mse-s0+max",
+    "run": "results/training/search/gnn-64x3-mse-s0/2026-10-30T072601Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "0836f53fb235466c9fed24f05feb7b26e72f43ac001099742145e6b74ff13898"
+   },
+   {
+    "name": "gnn-64x3-asym-s0+max",
+    "run": "results/training/gnn-64x3-asym-s0/2026-10-30T102529Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "88a7eab8e1d9b0343e9f26b7a3a58259f5b6de9cf158261bde0f6f8b0328aa87"
+   },
+   {
+    "name": "gnn-128x3-mse-s0+max",
+    "run": "results/training/search/gnn-128x3-mse-s0/2026-10-30T091259Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "00383ccae5c34f76d5ed450eae9ba09127dd8f1c879988ce0f6a0fa7a20e9689"
+   },
+   {
+    "name": "gnn-128x3-asym-s0+max",
+    "run": "results/training/gnn-128x3-asym-s0/2026-10-30T114945Z-eea7a44",
+    "combine": "max_hmax",
+    "model_sha256": "a2bdd82878fb33862e34d6aeb53e0bd2c007e096b5145f329725bfbdcab61799"
+   }
+  ]
+ },
+ "python": "3.12.13 (main, Apr 14 2026, 14:33:40) [Clang 22.1.3 ]",
+ "platform": "macOS-15.6-arm64-arm-64bit",
+ "machine": "arm64",
+ "processor": "arm",
+ "hardware": {
+  "cpu_model": "Apple M4",
+  "logical_cores": 10,
+  "physical_cores": 10,
+  "ram_bytes": 17179869184
+ },
+ "libraries": {
+  "Jinja2": "3.1.6",
+  "MarkupSafe": "3.0.4",
+  "Pygments": "2.21.0",
+  "ahg": "0.1.0",
+  "filelock": "4.2.4",
+  "fsspec": "2026.9.0",
+  "iniconfig": "2.3.1",
+  "mpmath": "1.3.0",
+  "networkx": "3.7",
+  "packaging": "26.3",
+  "pluggy": "1.7.0",
+  "pytest": "9.1.1",
+  "setuptools": "84.2.1",
+  "sympy": "1.14.0",
+  "torch": "2.15.0",
+  "typing_extensions": "4.16.0"
+ }
+}

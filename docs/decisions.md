@@ -2139,3 +2139,195 @@ The diagnostics are reported too.
   2. §2 selects on expansions alone. It therefore prefers the inadmissible ranking models (plan cost
      1.04–1.09, overestimation everywhere) over a (0.837, every val plan optimal).
   Any change to the frozen choice is a new decision entry, made before any test split is read.
+
+## 2026-10-31 — D23: Final design frozen before multi-seed training and before any test read
+
+**Status: ADOPTED, 2026-10-31,** after the D22 round (D22 §8) and **before** any D23
+training run and **before any test split is read.** No test split has been opened
+(`results/test_access_log.jsonl` has no evaluation entry). It amends D17 §2 and §4 where it says so.
+Everything else in D17, D19 and D21 still holds.
+
+### 1. Primary models: two, both GNN 64×3
+
+| id | D22 variant | config (overrides of `configs/training/d21.json`) | role |
+|---|---|---|---|
+| **A** | d | `kind=gnn hidden=64 layers=3 lr=0.001 target=residual loss=rank` | efficiency headline |
+| **B** | a | `kind=gnn hidden=64 layers=3 lr=0.001 target=residual loss=mse` | quality-preserving |
+
+Search heuristic for both: h = h_max + max(0, r) (D22 §4).
+
+**This overrides the D22 §2 selection rule.** That rule froze d at 64×6. A is d at
+64×3, for three reasons, all from validation and decided before any test read:
+
+1. **The gap is noise.** 64×6: 0.5946 [0.524, 0.667] vs h_max. 64×3: 0.5951
+   [0.526, 0.665]. The 0.0005 gap is far inside both CIs.
+2. **Plan cost.** H2's threshold is 1.05 (D17 §2).
+   - 64×6: point estimate 1.054 [1.033, 1.077], above the threshold.
+   - 64×3: point estimate 1.039 [1.022, 1.059], within it.
+   - As D17 states it, H2 is judged on the CI upper bound. By that criterion
+     neither passes on val (1.059 and 1.077). The reason is the point estimates
+     and the lower plan cost of 64×3, not an H2 pass.
+3. **Speed.** 64×3 is faster end to end: 0.60× vs 0.95× Python LM-cut time on val.
+
+**B is added as a second primary.** It reaches 0.837 [0.783, 0.892] vs h_max on
+val with every val plan optimal. A trades plan cost for effort; B does not.
+Reporting both answers H1 and H2 for each kind of model, not just for the one
+that wins on expansions.
+
+Both A and B were selected on val (D22), so their val numbers are optimistic.
+Claims rest on the test splits only.
+
+### 2. Hypothesis tests (amends D17 §2: the model under test is now A and B, separately)
+
+**H1, core.** A\*+A and A\*+B, each against A\*+h0, A\*+h_max and A\*+h_sp, on
+in-distribution test, by expansions.
+- The D17 threshold is unchanged: geometric-mean ratio ≤ 0.90, CI upper bound < 1,
+  Holm-corrected Wilcoxon p < 0.01.
+- H1 holds for a model only if it holds against all three.
+- The verdict is stated per model.
+
+**H1, h_add comparisons (new; h_add is no longer only a reference).** A and B are
+compared, by expansions, plan-cost ratio and end-to-end time, against:
+- A\*+h_add;
+- GBFS+h_add;
+- weighted A\*+h_add with w = 1.5;
+- weighted A\*+h_add with w = 2.
+
+These searches use the same `best_first_search` (D3 ties, D4 reopening) and the
+same budget. The verdict per comparison:
+- **"beats":** the D17 threshold above;
+- **"loses":** ratio ≥ 1/0.90, CI lower bound > 1, Holm p < 0.01;
+- otherwise **"no difference shown".**
+
+The plan-cost ratios of these four searches are measured, not bounded (rule 8).
+
+**Holm family for H1.** Every expansion comparison, 2 models × 7 comparators =
+14 Wilcoxon tests, Holm-corrected together. Time and plan cost carry CIs only, no
+p-values. The family is fixed here.
+
+**Statistics (D17 §2, made concrete).**
+- Per (instance, seed), the ratio is model / baseline.
+- Point estimate: the geometric mean over instances and seeds.
+- CI: a nested bootstrap, 10,000 resamples. Each resample draws instances, then seeds within the model's seeds.
+- Wilcoxon signed-rank, per instance, paired: the model's seed-mean log
+  expansions against the baseline's log expansions.
+- Effect size: the matched-pairs rank-biserial correlation.
+
+**H2.** Unchanged, per model.
+- Plan-cost ratio CI upper bound ≤ 1.05 means "small cost". CI lower bound
+  > 1.10 falsifies it.
+- Also reported: optimal share, and the overestimation rate and violations on
+  walk vs A\* states.
+
+**H3.** Unchanged, per model: the ratio vs h_max under each of the four shift
+splits (size, structure, vuln, vuln_cost) against in-distribution test. The CI
+of the difference must exclude 0. Holm-corrected within H3:
+2 models × 4 shifts = 8 tests.
+
+### 3. Pre-registered predictions, written before seeing the comparisons they predict
+
+**What was seen first.** GBFS+h_add and weighted A\*+h_add have not been run on
+any split. A\*+h_add was run on val: there, d 64×3 vs A\*+h_add was 1.011
+[0.990, 1.033] on expansions and 9.66× on time. A\*+h_add's val plan cost was
+not looked at.
+
+- **P1 (A vs A\*+h_add, expansions).** No difference shown. The ratio lies within
+  [0.95, 1.05]. A learns an h that orders states about as h_add does.
+- **P2 (A vs GBFS+h_add and wA\*+h_add at w = 2, expansions).** A loses, or no
+  difference is shown. A beats neither.
+- **P3 (A vs wA\*+h_add at w = 1.5, expansions).** A does not beat it.
+- **P4 (plan cost).**
+  - A's ratio is no higher than GBFS+h_add's.
+  - A\*+h_add's ratio is no higher than A's.
+- **P5 (time).** A loses to all four h_add searches (CI lower bound > 1): a GNN
+  call costs far more than an h_add evaluation.
+- **P6 (B).**
+  - B loses on expansions to all four h_add searches.
+  - B's plan-cost ratio is the lowest of all inadmissible methods.
+  - B meets H2.
+- **P7 (A, H2).** A does not meet H2's threshold (CI upper bound > 1.05), but is
+  not falsified (CI lower bound ≤ 1.10).
+- **P8 (H1 core).**
+  - A meets H1 against h0, h_max and h_sp.
+  - B meets it against h0 and h_sp. Against h_max it is uncertain (val 0.837,
+    CI upper bound 0.892).
+
+### 4. Ablations: 3 seeds each (amends D17 §2 ablation list and §4 seed counts)
+
+| ablation | config (overrides) | training |
+|---|---|---|
+| base GNN-MSE | `kind=gnn hidden=64 layers=3 lr=0.001 loss=mse` | seeds 0–2 |
+| asymmetric loss | `kind=gnn hidden=64 layers=3 lr=0.001 loss=asym` (w_over = 4) | seeds 0–2 |
+| ranking without residual (D22 c) | `kind=gnn hidden=64 layers=3 lr=0.001 loss=rank` | seeds 0–2 |
+| max-combination (D22 b) | max(h_max, base GNN-MSE), at search time | none: the base GNN-MSE seeds |
+| MLP | `kind=mlp hidden=64 lr=0.001 loss=mse` | seeds 0–2 |
+| WL | `kind=wl lam=0.1 loss=mse` | seeds 0–2 (deterministic: the 3 runs must be identical, which checks it) |
+
+**Changes from D17, stated plainly.**
+- **The MLP moves from 5 seeds to 3.** It is reported as an ablation, so no
+  claim rests on it.
+- **D17's walk-only-labels, GNN 128×6 width and with-vs-without-CVSS ablations
+  are dropped.** D17's fallback list (§6, amendment 3, step 3) already drops all
+  three while keeping the MLP.
+  Depth and width are covered only by the D21 search and the D22 64×6 run, both
+  seed 0 on val.
+
+Ablations are reported against the same metrics but carry no hypothesis verdict.
+
+### 5. Training protocol (fixed; D21 §3 unchanged otherwise)
+
+- **Hyperparameters:** the configs in §1 and §4, from `configs/training/d23.json`.
+  Every other key is the D21 default: batch 256, Adam, max_epochs 30,
+  patience 5, early stopping on each model's own val loss, best-val weights kept.
+- **Seeds:** A and B use 0–4; ablations use 0–2. Every seed is reported. No
+  seed is selected or dropped.
+- **No wall-clock deadline.** Runs train to the protocol's own stop: patience or
+  max_epochs. A deadline would make results depend on machine load.
+- **Hardware:** the M4 CPU (`device=cpu`), the default 4 torch threads,
+  `PYTHONHASHSEED=0`. CPU training is bitwise reproducible (D21 amendment 1).
+- **Order:** A s0 and B s0 first (§6), then A s1–4, then B s1–4, then the
+  ablations.
+- **Runner:** `scripts/train.py plan configs/training/d23.json`. Each run is its own runlog folder,
+  `results/training/d23/<run name>/<stamp>-<commit>/`.
+  - **Resumable** at run granularity: a run with a `model.pt` is skipped.
+  - **Not resumable within a run.** Restoring an epoch checkpoint would need the
+    optimiser and every RNG state to stay bitwise identical. A run interrupted
+    mid-way restarts from epoch 0, as a new folder; any folder it left without a
+    model.pt is reported, not deleted.
+  - **Failures** are recorded and the runner continues.
+- **Val metrics per seed** come from the D21 §4 harness on val, with b applied to
+  the base GNN-MSE seeds. Diagnostic only.
+
+### 6. Seed 0 must reproduce D22
+
+Before any other D23 run, the runner retrains A s0 and B s0. It requires
+**identical state_dict tensors** and an identical per-epoch loss history (timings
+excluded) against:
+- A: `results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9`;
+- B: `results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9`.
+
+If either differs, the runner stops before any other run, and the cause is
+investigated before anything else trains. The multi-seed results then extend the
+selected models, not new ones.
+
+### 7. Test-split evaluation protocol (fixed; D17 §4 made concrete)
+
+- **When:** only after every D23 run has finished and its val metrics are logged.
+  No model changes after that point.
+- **Frozen manifest:** `results/training/d23/frozen.json` lists every run folder
+  and the SHA-256 of its model.pt. It is written by the runner, committed, and
+  its own SHA-256 goes into every test-access log entry. Nothing is used that is
+  not in the manifest.
+- **Reads:** one `scripts/evaluate.py` invocation per test split. There are 5:
+  test_id, test_size, test_structure, test_vuln, test_vuln_cost.
+  - Each invocation runs every manifest model, b on the base GNN-MSE seeds, every
+    classical baseline and the four h_add searches.
+  - It runs on the M4: single process, 1 torch thread, 200k budget.
+  - `open_batch(purpose="evaluation")` logs the access first.
+  - A second read of a split is refused unless a later D-entry records why.
+- **Implemented and tested on val before the first test read,** with no change to
+  anything above:
+  - the h_add searches in the harness;
+  - the manifest check;
+  - the nested-bootstrap, Holm and effect-size statistics script.
+- **Timing:** only the M4 runs above. HPC runs, if any, report no time.

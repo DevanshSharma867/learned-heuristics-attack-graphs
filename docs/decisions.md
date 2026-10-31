@@ -2401,7 +2401,7 @@ copies, is unchanged.
 
 **Applied to the recorded numbers.**
 - A: overlaps on both metrics (estimates 0.594 and 1.039, inside the D22 CIs).
-- B: expansions [the new CI's bounds, from the re-run gate] vs [0.783, 0.892]; plan cost [1.000,
+- B: expansions [0.730, 0.841] vs [0.783, 0.892]; plan cost [1.000,
   1.0013] vs [1.000, 1.000], which overlap at 1.000.
 
-The gate is re-run under this rule and its report is the record.
+The gate was re-run under this rule and PASSED: `results/training/d23t1-gate/2026-10-31T113857Z-7e84126/`.

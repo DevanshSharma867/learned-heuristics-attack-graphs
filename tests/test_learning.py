@@ -159,3 +159,29 @@ def test_rank_and_residual_are_gnn_only(batches):
     train, val = batches
     with pytest.raises(ValueError):
         train_model(make_config(kind="mlp", loss="rank"), [train], [val])
+
+
+def _train_script():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("train_script", Path(__file__).parents[1] / "scripts" / "train.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_plan_runs_reproduction_seeds_first_and_same_model_is_bitwise(batches, tmp_path):
+    """D23 §5–§6: the seed-0 reproduction runs come first; same_model accepts only bitwise-identical runs."""
+    tr = _train_script()
+    plan = {"reproduce": {"B": "x"}, "models": [
+        {"id": "A", "seeds": [0, 1], "overrides": {"kind": "mlp"}},
+        {"id": "B", "seeds": [0, 1], "overrides": {"kind": "mlp", "loss": "asym"}}]}
+    assert [(i, c["seed"]) for i, c in tr.plan_runs(plan)] == [("B", 0), ("A", 0), ("A", 1), ("B", 1)]
+    train, val = batches
+    runs = []
+    for k, seed in enumerate((0, 0, 1)):
+        cfg = make_config(kind="mlp", hidden=16, max_epochs=2, seed=seed)
+        out, _ = tr.train_run(cfg, f"r{k}", ([train], [val]), root=tmp_path)
+        runs.append(out)
+    assert tr.same_model(runs[0], runs[1]) == []
+    assert set(tr.same_model(runs[0], runs[2])) >= {"config", "weights"}

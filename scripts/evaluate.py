@@ -1,11 +1,13 @@
 """Run the D21 §4 harness: every baseline and every given model in A* on one split's label batches.
 
 Usage:
-  python scripts/evaluate.py --batches DIR [DIR ...] --models RUN [RUN ...] [--max-hmax RUN ...] [--name NAME]
-                             [--purpose evaluation --permitted-by D-ENTRY]
+  python scripts/evaluate.py --batches DIR [DIR ...] [--models RUN ...] [--max-hmax RUN ...] [--manifest FROZEN]
+                             [--name NAME] [--purpose evaluation --permitted-by D-ENTRY]
 
   RUN: a results/training/ run folder (its model.pt is loaded).
   --max-hmax RUN: also search with max(h_max, h_θ) for that model, named <model>+max (D22 variant b).
+  --manifest FROZEN: a frozen.json from `scripts/train.py plan` (D23 §7). Adds every run in it, and
+      max(h_max, ·) for the runs whose id is in its max_hmax list; refuses a model.pt whose SHA-256 differs.
   A test-split batch is opened only with --purpose; open_batch logs the read in
   results/test_access_log.jsonl before anything is loaded, and refuses a second
   evaluation of a split without --permitted-by.
@@ -17,6 +19,7 @@ Output: results/evaluation/<name>/<stamp>-<commit>/ (raw records, summary, repor
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 
 import torch
@@ -72,8 +75,9 @@ def render(raw) -> str:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--batches", type=Path, nargs="+", required=True)
-    ap.add_argument("--models", type=Path, nargs="+", required=True)
+    ap.add_argument("--models", type=Path, nargs="*", default=[])
     ap.add_argument("--max-hmax", type=Path, nargs="*", default=[])
+    ap.add_argument("--manifest", type=Path)
     ap.add_argument("--name")
     ap.add_argument("--purpose")
     ap.add_argument("--permitted-by")
@@ -84,8 +88,20 @@ def main():
     if len(splits) != 1:
         raise SystemExit(f"one split per evaluation, got {sorted(splits)}")
     split = splits.pop()
+    runs = [(r, None) for r in args.models] + [(r, "max_hmax") for r in args.max_hmax]
+    manifest = None
+    if args.manifest:
+        frozen = json.loads(args.manifest.read_text())
+        manifest = {"path": str(args.manifest), "sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest()}
+        for r in frozen["runs"]:
+            run = ROOT / r["run"]
+            if hashlib.sha256((run / "model.pt").read_bytes()).hexdigest() != r["model_sha256"]:
+                raise SystemExit(f"{run}/model.pt does not match the manifest hash")
+            runs += [(run, None)] + ([(run, "max_hmax")] if r["id"] in frozen["max_hmax"] else [])
+    if not runs:
+        raise SystemExit("no models: give --models, --max-hmax or --manifest")
     learned, models = [], []
-    for run, combine in [(r, None) for r in args.models] + [(r, "max_hmax") for r in args.max_hmax]:
+    for run, combine in runs:
         model, cfg = load(run / "model.pt")
         name = model_name(run) + ("+max" if combine else "")
         learned.append(Learned(model, cfg, name, combine))
@@ -94,7 +110,7 @@ def main():
     if len({m["name"] for m in models}) != len(models):
         raise SystemExit(f"model names must be unique: {[m['name'] for m in models]}")
     records = evaluate(batches, learned, BUDGET)
-    raw = {"split": split, "batches": [b.manifest["batch_id"] for b in batches], "models": models,
+    raw = {"split": split, "batches": [b.manifest["batch_id"] for b in batches], "models": models, "manifest": manifest,
            "instances": len(records), "torch_threads": torch.get_num_threads(), "budget": BUDGET,
            "records": records, "summary": summarise(records, [m["name"] for m in models], BUDGET)}
     out = write_run(args.name or split, raw, render(raw), [], {"batches": raw["batches"], "models": models},

@@ -1,0 +1,25 @@
+{
+ "name": "d23",
+ "decision": "D23",
+ "reproduce": {
+  "A": "results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9",
+  "B": "results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9"
+ },
+ "models": [
+  {"id": "A", "role": "primary", "seeds": [0, 1, 2, 3, 4],
+   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "target": "residual", "loss": "rank"}},
+  {"id": "B", "role": "primary", "seeds": [0, 1, 2, 3, 4],
+   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "target": "residual", "loss": "mse"}},
+  {"id": "gnn-mse", "role": "ablation", "seeds": [0, 1, 2],
+   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "mse"}},
+  {"id": "gnn-asym", "role": "ablation", "seeds": [0, 1, 2],
+   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "asym"}},
+  {"id": "gnn-rank", "role": "ablation", "seeds": [0, 1, 2],
+   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "rank"}},
+  {"id": "mlp", "role": "ablation", "seeds": [0, 1, 2],
+   "overrides": {"kind": "mlp", "hidden": 64, "lr": 0.001, "loss": "mse"}},
+  {"id": "wl", "role": "ablation", "seeds": [0, 1, 2],
+   "overrides": {"kind": "wl", "lam": 0.1, "loss": "mse"}}
+ ],
+ "max_hmax": ["gnn-mse"]
+}

@@ -9,6 +9,10 @@ Usage:
       failures included, and the per-kind selection is by validation MSE.
   python scripts/train.py sequence --name NAME --budget-hours H --run "KEY=VALUE ..." [--run ...]
       Several runs in order under one shared hard budget (D22 §5); every run recorded.
+  python scripts/train.py plan CONFIG
+      The D23 multi-seed plan (configs/training/d23.json): the reproduction seeds first (stop unless
+      identical to D22), then every model × seed. No deadline. Resumable: a run with a model.pt is
+      skipped, so rerunning the same command continues. Writes <name>/frozen.json when complete.
   python scripts/train.py timing [--epochs 2]
       Seconds per training epoch for the GNN and MLP, on CPU and on MPS (no checkpoint).
   python scripts/train.py project --timing RUN --primary RUN [RUN ...] --ablation RUN [RUN ...]
@@ -19,6 +23,7 @@ Runs go to results/training/<name>/<stamp>-<commit>/ through runlog (append-only
 """
 
 import argparse
+import hashlib
 import itertools
 import json
 import time
@@ -132,6 +137,100 @@ def cmd_sequence(args):
                     {"runs": [r["overrides"] for r in rows]}, root=TRAINING))
 
 
+def same_model(a: Path, b: Path) -> list[str]:
+    """What differs between two runs: config, weights (bitwise), per-epoch losses (timings excluded). [] if nothing."""
+    ca, cb = (torch.load(r / "model.pt", weights_only=False) for r in (a, b))
+    sa, sb = ca["state_dict"], cb["state_dict"]
+    strip = lambda r: [{k: v for k, v in e.items() if not k.endswith("seconds")} for e in load_raw(r)["history"]]
+    return ([] if ca["config"] == cb["config"] else ["config"]) + \
+        ([] if sa.keys() == sb.keys() and all(torch.equal(sa[k], sb[k]) for k in sa) else ["weights"]) + \
+        ([] if strip(a) == strip(b) else ["history"])
+
+
+def plan_runs(plan: dict) -> list[tuple[str, dict]]:
+    """(model id, config) in D23 §5 order: the seed-0 reproduction runs first, then each model's seeds in turn."""
+    runs = [(m["id"], make_config(**m["overrides"], seed=s)) for m in plan["models"] for s in m["seeds"]]
+    first = [r for r in runs if r[0] in plan["reproduce"] and r[1]["seed"] == 0]
+    return first + [r for r in runs if r not in first]
+
+
+def finished(name: str) -> tuple[Path | None, list[Path]]:
+    """The latest finished folder of run `name` (it has a model.pt), and folders an interrupted run left without one."""
+    dirs = sorted(p for p in (TRAINING / name).glob("*") if p.is_dir())
+    done = [p for p in dirs if (p / "model.pt").exists()]
+    return (done[-1] if done else None), [p for p in dirs if not (p / "model.pt").exists()]
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def cmd_plan(args):
+    """D23 §5–§6. Runs are trained one at a time in this process; each is written by train_run on completion,
+    so a crash loses at most the run in progress, and rerunning the command resumes after the last finished run."""
+    plan = json.loads(args.plan.read_text())
+    runs = plan_runs(plan)
+    batches = load_batches(runs[0][1])
+    t0, rows, halt = time.time(), [], None
+    for mid, cfg in runs:
+        name = f"{plan['name']}/{run_name(cfg)}"
+        out, orphans = finished(name)
+        row = {"id": mid, "seed": cfg["seed"], "config": cfg, "orphans": [str(p.relative_to(ROOT)) for p in orphans]}
+        if out:
+            row["status"] = "done earlier"
+        else:
+            try:
+                out, _ = train_run(cfg, name, batches)
+                row["status"] = "ok"
+            except Exception as e:  # recorded, never dropped; the plan goes on
+                row.update(status="failed", error=f"{type(e).__name__}: {e}", traceback=traceback.format_exc())
+        if out:
+            raw = load_raw(out)
+            row.update(run=str(out.relative_to(ROOT)), best_val_loss=raw["best_val_loss"], seconds=raw["wall_seconds"],
+                       epochs=sum("epoch" in e for e in raw["history"]))
+        if mid in plan["reproduce"] and cfg["seed"] == 0:  # D23 §6: extend the D22 models, not new ones
+            ref = plan["reproduce"][mid]
+            row["reproduce_diffs"] = same_model(out, ROOT / ref) if out else ["no run"]
+            if row["reproduce_diffs"]:
+                halt = f"{mid} seed 0 does not reproduce {ref}: differs in {row['reproduce_diffs']}"
+        rows.append(row)
+        print(mid, cfg["seed"], row["status"], row.get("best_val_loss"), row.get("reproduce_diffs", ""), flush=True)
+        if halt:
+            print("HALT:", halt, flush=True)
+            break
+    complete = not halt and len(rows) == len(runs) and all("run" in r for r in rows)
+    raw = {"plan": str(args.plan), "plan_sha256": sha256(args.plan), "elapsed_seconds": time.time() - t0,
+           "rows": rows, "halt": halt, "complete": complete}
+    if complete:
+        role = {m["id"]: m["role"] for m in plan["models"]}
+        frozen = {"decision": plan["decision"], "plan": str(args.plan), "plan_sha256": raw["plan_sha256"],
+                  "max_hmax": plan["max_hmax"],
+                  "runs": [{"id": r["id"], "role": role[r["id"]], "seed": r["seed"], "run": r["run"],
+                            "model_sha256": sha256(ROOT / r["run"] / "model.pt")} for r in rows]}
+        path = TRAINING / plan["name"] / "frozen.json"
+        text = json.dumps(frozen, indent=1) + "\n"
+        if path.exists() and path.read_text() != text:  # the manifest is written once (D23 §7)
+            raise SystemExit(f"{path} exists with different contents; not overwritten")
+        path.write_text(text)
+        raw["frozen"] = str(path.relative_to(ROOT))
+    L = [f"# {plan['name']}: {plan['decision']} multi-seed plan", "",
+         f"{len(rows)} of {len(runs)} runs reached; elapsed this invocation {raw['elapsed_seconds'] / 3600:.2f} h. "
+         f"Complete: {complete}." + (f" **HALT: {halt}**" if halt else ""), "",
+         "| id | seed | status | best val loss | epochs | seconds | reproduces D22 | run |", "|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        rep = "—" if "reproduce_diffs" not in r else ("yes (bitwise)" if not r["reproduce_diffs"] else
+                                                     f"NO: {', '.join(r['reproduce_diffs'])}")
+        L.append(f"| {r['id']} | {r['seed']} | {r['status']} | " + (
+            f"{r['best_val_loss']:.4f} | {r['epochs']} | {r['seconds']:.0f} | {rep} | {r['run']} |" if "run" in r else
+            f"— | — | — | {rep} | {r.get('error', '')} |"))
+    orphans = [o for r in rows for o in r["orphans"]]
+    if orphans:
+        L += ["", "Folders left by interrupted runs (no model.pt; kept, append-only): " + ", ".join(orphans)]
+    print(write_run(plan["name"], raw, "\n".join(L) + "\n", sorted({r["seed"] for r in rows}), plan, root=TRAINING))
+    if not complete:
+        raise SystemExit(1)
+
+
 def render_search(raw) -> str:
     L = [f"# hyperparameter search (D21 §5)", "",
          f"Budget {raw['budget_hours']} h; elapsed {raw['elapsed_seconds'] / 3600:.2f} h. Seed 0, MSE, selection by val MSE.",
@@ -212,6 +311,8 @@ def main():
     p.add_argument("--name", required=True)
     p.add_argument("--budget-hours", type=float, required=True)
     p.add_argument("--run", action="append", required=True)
+    p = sub.add_parser("plan")
+    p.add_argument("plan", type=Path)
     p = sub.add_parser("timing")
     p.add_argument("--epochs", type=int, default=2)
     p = sub.add_parser("project")
@@ -219,7 +320,7 @@ def main():
     p.add_argument("--primary", type=Path, nargs="+", required=True)
     p.add_argument("--ablation", type=Path, nargs="+", required=True)
     args = ap.parse_args()
-    {"run": cmd_run, "search": cmd_search, "sequence": cmd_sequence, "timing": cmd_timing,
+    {"run": cmd_run, "search": cmd_search, "sequence": cmd_sequence, "plan": cmd_plan, "timing": cmd_timing,
      "project": cmd_project}[args.cmd](args)
 
 

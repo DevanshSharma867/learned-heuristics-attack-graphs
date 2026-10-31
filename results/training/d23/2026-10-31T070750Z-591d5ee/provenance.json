@@ -1,0 +1,169 @@
+{
+ "date_utc": "2026-10-31T07:07:50+00:00",
+ "git_commit": "591d5eec403cb67067147d2140b706f502fc7fb4",
+ "git_dirty": true,
+ "argv": [
+  "scripts/train.py",
+  "plan",
+  "configs/training/d23.json"
+ ],
+ "seeds": [
+  0
+ ],
+ "config": {
+  "name": "d23",
+  "decision": "D23",
+  "reproduce": {
+   "A": "results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9",
+   "B": "results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9"
+  },
+  "models": [
+   {
+    "id": "A",
+    "role": "primary",
+    "seeds": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ],
+    "overrides": {
+     "kind": "gnn",
+     "hidden": 64,
+     "layers": 3,
+     "lr": 0.001,
+     "target": "residual",
+     "loss": "rank"
+    }
+   },
+   {
+    "id": "B",
+    "role": "primary",
+    "seeds": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ],
+    "overrides": {
+     "kind": "gnn",
+     "hidden": 64,
+     "layers": 3,
+     "lr": 0.001,
+     "target": "residual",
+     "loss": "mse"
+    }
+   },
+   {
+    "id": "gnn-mse",
+    "role": "ablation",
+    "seeds": [
+     0,
+     1,
+     2
+    ],
+    "overrides": {
+     "kind": "gnn",
+     "hidden": 64,
+     "layers": 3,
+     "lr": 0.001,
+     "loss": "mse"
+    }
+   },
+   {
+    "id": "gnn-asym",
+    "role": "ablation",
+    "seeds": [
+     0,
+     1,
+     2
+    ],
+    "overrides": {
+     "kind": "gnn",
+     "hidden": 64,
+     "layers": 3,
+     "lr": 0.001,
+     "loss": "asym"
+    }
+   },
+   {
+    "id": "gnn-rank",
+    "role": "ablation",
+    "seeds": [
+     0,
+     1,
+     2
+    ],
+    "overrides": {
+     "kind": "gnn",
+     "hidden": 64,
+     "layers": 3,
+     "lr": 0.001,
+     "loss": "rank"
+    }
+   },
+   {
+    "id": "mlp",
+    "role": "ablation",
+    "seeds": [
+     0,
+     1,
+     2
+    ],
+    "overrides": {
+     "kind": "mlp",
+     "hidden": 64,
+     "lr": 0.001,
+     "loss": "mse"
+    }
+   },
+   {
+    "id": "wl",
+    "role": "ablation",
+    "seeds": [
+     0,
+     1,
+     2
+    ],
+    "overrides": {
+     "kind": "wl",
+     "lam": 0.1,
+     "loss": "mse"
+    }
+   }
+  ],
+  "max_hmax": [
+   "gnn-mse"
+  ]
+ },
+ "python": "3.12.13 (main, Apr 14 2026, 14:33:40) [Clang 22.1.3 ]",
+ "platform": "macOS-15.6-arm64-arm-64bit",
+ "machine": "arm64",
+ "processor": "arm",
+ "hardware": {
+  "cpu_model": "Apple M4",
+  "logical_cores": 10,
+  "physical_cores": 10,
+  "ram_bytes": 17179869184
+ },
+ "libraries": {
+  "Jinja2": "3.1.6",
+  "MarkupSafe": "3.0.4",
+  "Pygments": "2.21.0",
+  "ahg": "0.1.0",
+  "filelock": "4.2.4",
+  "fsspec": "2026.9.0",
+  "iniconfig": "2.3.1",
+  "mpmath": "1.3.0",
+  "networkx": "3.7",
+  "packaging": "26.3",
+  "pluggy": "1.7.0",
+  "pytest": "9.1.1",
+  "setuptools": "84.2.1",
+  "sympy": "1.14.0",
+  "torch": "2.15.0",
+  "typing_extensions": "4.16.0"
+ }
+}

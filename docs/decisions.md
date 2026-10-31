@@ -2380,3 +2380,28 @@ before any test read. Evidence: experiment log, rows of 2026-10-31.
    - `scripts/train.py plan|gate|finalize` and `scripts/d23_local.sh` run the phases.
 
 Nothing else in D23 changes: models, hyperparameters, seeds, ablations, predictions, the test protocol.
+
+### Amendment 2 (2026-10-31): gate criterion (b) becomes CI overlap. Made after the gate failed.
+
+**Status: ADOPTED by the author, 2026-10-31,** after the amendment-1 gate failed
+(`results/training/d23t1-gate/2026-10-31T094047Z-0126a7d/`). Before any test read. **This change was made
+after seeing the failure and is reported as such.**
+
+**Failure.**
+- Both copies were bitwise identical, and A passed (b).
+- B's val expansion ratio (0.786) was inside D22's CI.
+- B's plan cost failed: 1.0004 [1.000, 1.0013], with 81 of 82 val plans optimal. D22's B had every
+  plan optimal, so its CI is the single point [1.000, 1.000].
+- "Estimate inside a CI" is an exact-equality test whenever the CI is degenerate, which amendment 1 did
+  not anticipate.
+
+**Change.** Criterion (b) becomes: for each metric (expansion ratio vs h_max, plan-cost ratio), the
+new run's val 95% CI **overlaps** the D22 model's val 95% CI. Criterion (a), bitwise identity of the
+copies, is unchanged.
+
+**Applied to the recorded numbers.**
+- A: overlaps on both metrics (estimates 0.594 and 1.039, inside the D22 CIs).
+- B: expansions [the new CI's bounds, from the re-run gate] vs [0.783, 0.892]; plan cost [1.000,
+  1.0013] vs [1.000, 1.000], which overlap at 1.000.
+
+The gate is re-run under this rule and its report is the record.

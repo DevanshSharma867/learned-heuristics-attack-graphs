@@ -1,5 +1,5 @@
 #!/bin/zsh
-# D23 (amendment 1): the multi-seed plan on the M4 CPU at 1 torch thread per run, then per-seed val metrics
+# D23 (amendments 1, 2): the multi-seed plan on the M4 CPU at 1 torch thread per run, then per-seed val metrics
 # (D21 §4 harness, val only). Phases: gate runs (4 in parallel) -> gate check -> the rest (3 workers)
 # -> finalize (summary, frozen.json) -> val evaluation.
 # Start detached so a closed session or lost internet does not stop it:

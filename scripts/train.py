@@ -214,8 +214,8 @@ def cmd_plan(args):
 
 def cmd_gate(args):
     """D23 amendment 1 gate: (a) each reproduce id's seed 0 and its -check copy are bitwise identical;
-    (b) on val, its expansion ratio vs h_max and its plan-cost ratio (geometric means) lie inside the
-    95% CIs of the D22 model it reproduces, read from the D22 val evaluation."""
+    (b) on val, the 95% CIs of its expansion ratio vs h_max and of its plan-cost ratio overlap those of
+    the D22 model it reproduces, read from the D22 val evaluation (amendment 2)."""
     from ahg.evaluate import evaluate, summarise
     from ahg.learning.heuristic import Learned
     from ahg.learning.train import load
@@ -237,16 +237,17 @@ def cmd_gate(args):
     summ = summarise(evaluate(val, models, 200_000), [m.name for m in models], 200_000)
     for r in rows:
         new, old = summ[r["id"]], ref[r["d22"]]
-        r["hmax"] = {"new": new["vs"]["hmax"]["expansions"][0], "d22_ci": old["vs"]["hmax"]["expansions"]}
-        r["plan_cost"] = {"new": new["plan_cost"][0], "d22_ci": old["plan_cost"]}
-        inside = lambda x, ci: ci[1] <= x <= ci[2]
-        r["passed"] = (r["identical"] == [] and inside(r["hmax"]["new"], r["hmax"]["d22_ci"])
-                       and inside(r["plan_cost"]["new"], r["plan_cost"]["d22_ci"]))
+        r["hmax"] = {"new": new["vs"]["hmax"]["expansions"], "d22": old["vs"]["hmax"]["expansions"]}
+        r["plan_cost"] = {"new": new["plan_cost"], "d22": old["plan_cost"]}
+        # [estimate, lo, hi]; overlap, not "estimate inside", so a point CI such as [1, 1] is not an equality test
+        overlap = lambda d: d["new"][1] <= d["d22"][2] and d["d22"][1] <= d["new"][2]
+        r["passed"] = r["identical"] == [] and overlap(r["hmax"]) and overlap(r["plan_cost"])
     passed = all(r["passed"] for r in rows)
-    L = [f"# {plan['name']} gate (D23 amendment 1): {'PASSED' if passed else 'FAILED'}", "",
-         "| id | bitwise identical to its copy | val exp. ratio vs h_max (D22 CI) | val plan cost (D22 CI) | passed |",
+    L = [f"# {plan['name']} gate (D23 amendments 1, 2): {'PASSED' if passed else 'FAILED'}", "",
+         "| id | bitwise identical to its copy | val exp. ratio vs h_max: new / D22 | val plan cost: new / D22 | passed |",
          "|---|---|---|---|---|"]
-    f = lambda d: f"{d['new']:.4f} ([{d['d22_ci'][1]:.4f}, {d['d22_ci'][2]:.4f}])"
+    ci = lambda c: f"{c[0]:.4f} [{c[1]:.4f}, {c[2]:.4f}]"
+    f = lambda d: f"{ci(d['new'])} / {ci(d['d22'])}"
     L += [f"| {r['id']} | {'yes' if not r['identical'] else 'NO: ' + ', '.join(r['identical'])} | {f(r['hmax'])} | "
           f"{f(r['plan_cost'])} | {r['passed']} |" for r in rows]
     print(write_run(plan["name"] + "-gate", {"rows": rows, "passed": passed, "summary": summ}, "\n".join(L) + "\n",

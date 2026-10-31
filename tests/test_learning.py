@@ -170,18 +170,24 @@ def _train_script():
     return mod
 
 
-def test_plan_runs_reproduction_seeds_first_and_same_model_is_bitwise(batches, tmp_path):
-    """D23 §5–§6: the seed-0 reproduction runs come first; same_model accepts only bitwise-identical runs."""
+def test_plan_runs_gate_first_shards_disjoint_and_same_model_is_bitwise(batches, tmp_path):
+    """D23 amendment 1: gate runs (seed 0 and its -check copy) come first; workers split the rest disjointly;
+    same_model accepts only bitwise-identical runs."""
     tr = _train_script()
-    plan = {"reproduce": {"B": "x"}, "models": [
-        {"id": "A", "seeds": [0, 1], "overrides": {"kind": "mlp"}},
-        {"id": "B", "seeds": [0, 1], "overrides": {"kind": "mlp", "loss": "asym"}}]}
-    assert [(i, c["seed"]) for i, c in tr.plan_runs(plan)] == [("B", 0), ("A", 0), ("A", 1), ("B", 1)]
+    plan = {"name": "p", "reproduce": {"B": "x"}, "models": [
+        {"id": "A", "seeds": [0, 1], "est_seconds": 1, "overrides": {"kind": "mlp"}},
+        {"id": "B", "seeds": [0, 1], "est_seconds": 3, "overrides": {"kind": "mlp", "loss": "asym"}}]}
+    runs = tr.plan_runs(plan)
+    assert [(i, c["seed"], n.split("/")[0]) for i, c, n in runs] == [
+        ("B", 0, "p"), ("B", 0, "p-check"), ("A", 0, "p"), ("A", 1, "p"), ("B", 1, "p")]
+    rest = [r for r in runs if not tr.is_gate(plan, r)]
+    parts = [tr.shard(plan, rest, k, 2) for k in range(2)]
+    assert sorted(n for part in parts for _, _, n in part) == sorted(n for _, _, n in rest)
     train, val = batches
-    runs = []
+    outs = []
     for k, seed in enumerate((0, 0, 1)):
         cfg = make_config(kind="mlp", hidden=16, max_epochs=2, seed=seed)
         out, _ = tr.train_run(cfg, f"r{k}", ([train], [val]), root=tmp_path)
-        runs.append(out)
-    assert tr.same_model(runs[0], runs[1]) == []
-    assert set(tr.same_model(runs[0], runs[2])) >= {"config", "weights"}
+        outs.append(out)
+    assert tr.same_model(outs[0], outs[1]) == []
+    assert set(tr.same_model(outs[0], outs[2])) >= {"config", "weights"}

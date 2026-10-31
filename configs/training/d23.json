@@ -1,25 +1,137 @@
 {
- "name": "d23",
+ "name": "d23t1",
  "decision": "D23",
+ "torch_threads": 1,
  "reproduce": {
   "A": "results/training/d22/gnnres-64x3-lr0.001-rank-s0/2026-10-30T132542Z-27adeb9",
   "B": "results/training/d22/gnnres-64x3-lr0.001-mse-s0/2026-10-30T124719Z-27adeb9"
  },
+ "reproduce_val": "results/evaluation/d22-val/2026-10-30T132843Z-fa3a3a6",
  "models": [
-  {"id": "A", "role": "primary", "seeds": [0, 1, 2, 3, 4],
-   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "target": "residual", "loss": "rank"}},
-  {"id": "B", "role": "primary", "seeds": [0, 1, 2, 3, 4],
-   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "target": "residual", "loss": "mse"}},
-  {"id": "gnn-mse", "role": "ablation", "seeds": [0, 1, 2],
-   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "mse"}},
-  {"id": "gnn-asym", "role": "ablation", "seeds": [0, 1, 2],
-   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "asym"}},
-  {"id": "gnn-rank", "role": "ablation", "seeds": [0, 1, 2],
-   "overrides": {"kind": "gnn", "hidden": 64, "layers": 3, "lr": 0.001, "loss": "rank"}},
-  {"id": "mlp", "role": "ablation", "seeds": [0, 1, 2],
-   "overrides": {"kind": "mlp", "hidden": 64, "lr": 0.001, "loss": "mse"}},
-  {"id": "wl", "role": "ablation", "seeds": [0, 1, 2],
-   "overrides": {"kind": "wl", "lam": 0.1, "loss": "mse"}}
+  {
+   "id": "A",
+   "role": "primary",
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "overrides": {
+    "kind": "gnn",
+    "hidden": 64,
+    "layers": 3,
+    "lr": 0.001,
+    "target": "residual",
+    "loss": "rank"
+   },
+   "est_seconds": 1134
+  },
+  {
+   "id": "B",
+   "role": "primary",
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "overrides": {
+    "kind": "gnn",
+    "hidden": 64,
+    "layers": 3,
+    "lr": 0.001,
+    "target": "residual",
+    "loss": "mse"
+   },
+   "est_seconds": 2800
+  },
+  {
+   "id": "gnn-mse",
+   "role": "ablation",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "overrides": {
+    "kind": "gnn",
+    "hidden": 64,
+    "layers": 3,
+    "lr": 0.001,
+    "loss": "mse"
+   },
+   "est_seconds": 2600
+  },
+  {
+   "id": "gnn-asym",
+   "role": "ablation",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "overrides": {
+    "kind": "gnn",
+    "hidden": 64,
+    "layers": 3,
+    "lr": 0.001,
+    "loss": "asym"
+   },
+   "est_seconds": 2700
+  },
+  {
+   "id": "gnn-rank",
+   "role": "ablation",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "overrides": {
+    "kind": "gnn",
+    "hidden": 64,
+    "layers": 3,
+    "lr": 0.001,
+    "loss": "rank"
+   },
+   "est_seconds": 1169
+  },
+  {
+   "id": "mlp",
+   "role": "ablation",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "overrides": {
+    "kind": "mlp",
+    "hidden": 64,
+    "lr": 0.001,
+    "loss": "mse"
+   },
+   "est_seconds": 10
+  },
+  {
+   "id": "wl",
+   "role": "ablation",
+   "seeds": [
+    0,
+    1,
+    2
+   ],
+   "overrides": {
+    "kind": "wl",
+    "lam": 0.1,
+    "loss": "mse"
+   },
+   "est_seconds": 373
+  }
  ],
- "max_hmax": ["gnn-mse"]
+ "max_hmax": [
+  "gnn-mse"
+ ]
 }

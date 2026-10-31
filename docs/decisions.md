@@ -2331,3 +2331,52 @@ selected models, not new ones.
   - the manifest check;
   - the nested-bootstrap, Holm and effect-size statistics script.
 - **Timing:** only the M4 runs above. HPC runs, if any, report no time.
+
+### Amendment 1 (2026-10-31): one torch thread; the seed-0 gate becomes copy-identity plus D22 CIs
+
+**Status: ADOPTED by the author, 2026-10-31,** after the first D23 launch halted at the §6 gate. Still
+before any test read. Evidence: experiment log, rows of 2026-10-31.
+
+**What happened.**
+- A s0, retrained at 4 torch threads, was not bitwise equal to the D22 run; it already differed at epoch 0.
+- **Cause.** Multi-threaded CPU kernels sum in an order that depends on machine load.
+  - At 4 threads, gradients were identical on a quiet machine and different under load.
+  - At 1 thread, they were identical either way.
+  - D21 amendment 1's "CPU training is bitwise reproducible" therefore holds only on a quiet machine.
+  - Every earlier 4-thread GNN run (pilot, D22) is a valid run but cannot be bitwise repeated. The MLP
+    still is (its pilot run retrains bitwise).
+- **Consequence for §6.** No retrain can match the D22 runs bitwise, so the §6 gate as written cannot
+  pass. In search, the retrain matched D22 within noise: val 0.590 vs 0.595 × h_max, plan cost 1.028
+  vs 1.039.
+
+**Changes.**
+
+1. **Threads (amends §5).** Every D23 run uses **1 torch thread** (`torch_threads` in
+   `configs/training/d23.json`). This makes it bitwise reproducible under any load.
+   - Cost: 1 thread is as fast as 4 for A (36.8 vs 37.3 s per epoch) and 1.2× slower for B (121.6 vs
+     100.2 s).
+2. **Parallel runs (amends §5).** Runs execute in parallel worker processes, which is safe because each
+   is single-threaded and so load-independent:
+   - 4 workers for the gate runs and 3 for the rest, on the M4's 4 performance cores;
+   - fixed longest-first assignment by `est_seconds`.
+   Logged wall times are then measured under contention. The paper's training cost is reported from them,
+   with the concurrency stated.
+3. **Gate (replaces §6).** Seed 0 of A and of B is trained twice, as the run and an identical copy under
+   `d23t1-check/`. Training continues only if both conditions hold for each:
+   - (a) the two copies are **bitwise identical**: weights, config, per-epoch losses;
+   - (b) on val, its geometric-mean expansion ratio vs h_max and its plan-cost ratio lie **inside the 95%
+     CIs of the D22 model** it replaces, read from `results/evaluation/d22-val/2026-10-30T132843Z-fa3a3a6/`:
+     - A: [0.5257, 0.6653] and [1.0215, 1.0591];
+     - B: [0.7831, 0.8923] and [1.0000, 1.0000]. B's plan-cost CI is the single point 1, so B s0 must
+       return every val plan optimal.
+
+   Otherwise nothing else trains, and the failure is reported.
+
+   (a) makes the multi-seed set reproducible from here on. (b) ties it to the selected models as closely
+   as non-reproducible D22 weights allow. The new seed 0 replaces the D22 run in the manifest.
+4. **Names.** The plan is named `d23t1`: runs go to `results/training/d23t1/` and the manifest to
+   `results/training/d23t1/frozen.json`.
+   - The halted 4-thread A s0 in `results/training/d23/` stays logged and is not used.
+   - `scripts/train.py plan|gate|finalize` and `scripts/d23_local.sh` run the phases.
+
+Nothing else in D23 changes: models, hyperparameters, seeds, ablations, predictions, the test protocol.

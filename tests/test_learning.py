@@ -1,12 +1,13 @@
 """Learned heuristics (D21): losses, ridge fit, encodings, split guard, determinism, checkpoints, harness."""
 
 import math
+from pathlib import Path
 
 import pytest
 import torch
 
 from ahg.cost import SCALE
-from ahg.dataset import fact_features, open_batch
+from ahg.dataset import fact_features, open_batch, static_graph
 from ahg.evaluate import BASELINES, _geo_ci, evaluate, sibling_groups, sibling_order, summarise
 from ahg.heuristics import ADMISSIBLE, hmax, lmcut
 from ahg.labels import write_batch
@@ -191,3 +192,76 @@ def test_plan_runs_gate_first_shards_disjoint_and_same_model_is_bitwise(batches,
         outs.append(out)
     assert tr.same_model(outs[0], outs[1]) == []
     assert set(tr.same_model(outs[0], outs[2])) >= {"config", "weights"}
+
+
+VAL_BATCH = Path(__file__).parents[1] / "data" / "labels" / "val-677e9fe4-72e8821"
+D23_RUNS = Path(__file__).parents[1] / "results" / "training" / "d23t1"
+
+
+def _score_parity(model, cfg, batch, n_instances):
+    """The score the training loss sees, computed batched as in training, against the score A* calls, one state
+    at a time as in search, on the plan and open-list states the ranking loss is trained on (D24 §1)."""
+    from ahg.learning.encode import gnn_inputs
+    from ahg.learning.train import gnn_h, residual_h
+    checked = 0
+    for i, inst in enumerate(batch.instances):
+        if checked == n_instances:
+            break
+        if batch.manifest["instances"][i]["stats"] is None:
+            continue
+        states, pairs = plan_open_pairs(inst.task)
+        if not pairs:
+            continue
+        g = {"graph": static_graph(inst), **gnn_inputs(inst.task, states, residual=True)}
+        with torch.no_grad():
+            train_score = residual_h(g["hm"], gnn_h(model, g, True), cfg["loss"])
+        h = Learned(model, cfg, "m").bind(inst)
+        search_score = torch.tensor([h(inst.task, s) / SCALE for s in states])
+        assert torch.allclose(train_score, search_score, rtol=1e-5, atol=1e-4)
+        # The order the ranking loss sees on its pairs is the order search sees.
+        for a, b, _ in pairs:
+            if abs(float(train_score[a] - train_score[b])) > 1e-3:
+                assert (train_score[a] < train_score[b]) == (search_score[a] < search_score[b])
+        checked += 1
+    assert checked == n_instances
+
+
+@pytest.mark.parametrize("loss", ["rank", "mse"])
+def test_training_score_is_search_score(batches, loss):
+    """AUDIT_1 L1: the residual models search with the score they were trained on."""
+    train, val = batches
+    cfg = make_config(kind="gnn", max_epochs=1, hidden=16, layers=2, target="residual", loss=loss)
+    model, _ = train_model(cfg, [train], [val])
+    _score_parity(model, cfg, val, 1)
+
+
+@pytest.mark.skipif(not VAL_BATCH.exists() or not D23_RUNS.exists(), reason="real val labels / D23 runs not present")
+@pytest.mark.parametrize("run", ["gnnres-64x3-lr0.001-rank-s0", "gnnres-64x3-lr0.001-mse-s0"])
+def test_training_score_is_search_score_on_real_val_states(run):
+    """The same parity for the D23 seed-0 A and B checkpoints on real val instances."""
+    model, cfg = load(next((D23_RUNS / run).glob("*/model.pt")))
+    _score_parity(model, cfg, open_batch(VAL_BATCH), 5)
+
+
+def test_rank_transform_is_softplus_not_relu():
+    """The AUDIT_1 L1 counterexample: h_max [10, 9.8], r [-10, -1]. Training ranks state 1 above state 0;
+    max(0, r) would reverse it; residual_h keeps the training order."""
+    from ahg.learning.train import residual_h
+    hm, r = torch.tensor([10.0, 9.8]), torch.tensor([-10.0, -1.0])
+    h = residual_h(hm, r, "rank")
+    assert h[1] > h[0] and (hm + r.clamp_min(0))[1] < (hm + r.clamp_min(0))[0]
+    assert torch.equal(residual_h(hm, r, "mse"), hm)
+
+
+def test_encoding_cache_is_keyed_by_encoder_version(batches, tmp_path, monkeypatch):
+    """AUDIT_1 L2: an encoding written by one encoder version is never read by another."""
+    train, _ = batches
+    calls = []
+    build = lambda: calls.append(1) or torch.tensor([1.0])
+    encode._cached(train, "x", build, tmp_path)
+    encode._cached(train, "x", build, tmp_path)
+    assert len(calls) == 1  # same version: read from the cache
+    monkeypatch.setattr(encode, "ENCODER_VERSION", "other")
+    encode._cached(train, "x", build, tmp_path)
+    assert len(calls) == 2  # new version: rebuilt
+    assert not list(tmp_path.rglob("*.tmp"))

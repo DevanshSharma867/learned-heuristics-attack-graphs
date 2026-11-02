@@ -14,6 +14,7 @@ from ..dataset import mlp_features, static_graph, wl_colours
 from ..heuristics import hmax
 from .encode import fact_bits, gnn_inputs
 from .models import WLLinear
+from .train import residual_h
 
 
 class Learned:
@@ -41,13 +42,14 @@ class Learned:
             return h
         graph = {}
         if self.cfg.get("target", "hstar") == "residual":
-            def h(task, s):  # D22 a, d: h_max + max(0, r), with h_max computed here, inside the timing
+            loss = self.cfg["loss"]
+
+            def h(task, s):  # D24 §1: the training transform (residual_h), with h_max computed here, inside the timing
                 if not graph:
                     graph.update(static_graph(inst))
                 x = gnn_inputs(task, [s], residual=True)
                 with torch.no_grad():
-                    r = float(model(x["fx"], graph, x["glob"]))
-                return SCALE * (float(x["hm"][0]) + max(0.0, r))
+                    return SCALE * float(residual_h(x["hm"], model(x["fx"], graph, x["glob"]), loss)[0])
             return h
 
         def h(task, s):

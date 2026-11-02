@@ -71,6 +71,20 @@ def rank_loss(h, g):
     return softplus(g["dg"] + h[g["pi"]] - h[g["pj"]]).sum()
 
 
+def residual_h(hm, r, loss: str):
+    """h = h_max + t(r) for the residual target (D22 a, d; D24 §1), in effort units. The one place the
+    transform t is defined, so the score the ranking loss trains is the score A* searches with.
+
+    rank (A, D22 d): t = softplus. The ranking loss is trained on h_max + softplus(r) and only orders states,
+        so search must use the same strictly monotone map of r; max(0, r) collapses every r < 0 to 0
+        and can reverse the trained order (AUDIT_1 L1).
+    mse (B, D22 a): t = max(0, r). r is regressed directly onto h* - h_max >= 0 (h_max is admissible), so
+        the trained estimate is r itself; clipping it to the target's support [0, inf) never increases
+        its squared error, and is the identity wherever r >= 0. softplus would bias every estimate upward.
+    """
+    return hm + (softplus(r) if loss == "rank" else r.clamp_min(0))
+
+
 def gnn_h(model, g, residual: bool, sl=slice(None)):
     """Raw model output for states sl of group g (the residual r, or h itself)."""
     return model(g["fx"][sl], g["graph"], g["glob"][sl] if residual else None)
@@ -92,7 +106,7 @@ def _train_gnn(cfg, train, val, history, deadline=None):
     def group_rank_loss(g):
         out = gnn_h(model, g, residual)
         # Variant d trains h = h_max + softplus(r): a strictly positive residual keeps the gradient (D22 §4).
-        return rank_loss(g["hm"] + softplus(out) if residual else out, g)
+        return rank_loss(residual_h(g["hm"], out, "rank") if residual else out, g)
 
     def epoch():
         model.train()
@@ -166,7 +180,10 @@ def _early_stop(model, epoch, val_loss, cfg, history, deadline=None):
     return model.cpu().eval()
 
 
-def _train_wl(cfg, train, val, history, deadline=None):  # minutes, not hours: no deadline check
+def _train_wl(cfg, train, val, history, deadline=None):
+    """deadline (D24 §5, AUDIT_1 L3): checked between IRLS rounds, like the GNN/MLP epoch check, so no new
+    round starts after it. A ridge fit in progress is not interrupted: the bound is soft by one fit
+    (373 s for the D23 WL), and the first fit always runs, as the first epoch does in _early_stop."""
     hists = [h for b in train for h in encode.wl_histograms(b)]
     y = _cat([encode.targets(b) for b in train]).double()
     vocab: dict[str, int] = {}
@@ -179,6 +196,9 @@ def _train_wl(cfg, train, val, history, deadline=None):  # minutes, not hours: n
     w = None
     rounds = cfg["irls_rounds"] if cfg["loss"] == "asym" else 1
     for r in range(rounds):
+        if r > 0 and deadline is not None and time.time() >= deadline:
+            history.append({"stopped": "budget"})
+            break
         t0 = time.perf_counter()
         beta, bias = fit_ridge(X, y, cfg["lam"], w)
         pred = (X @ beta + bias).clamp_min(0)

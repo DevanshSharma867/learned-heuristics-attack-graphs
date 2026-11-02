@@ -125,7 +125,8 @@ def render(a: dict, source: str) -> str:
           f"{t['w_minus']:.1f} | {t['p']:.2e} | {t['p_holm']:.2e} | {t['rank_biserial']:+.3f} | {t['verdict']} |"
           for t in a["h1"]]
     L += ["", "r < 0: the model expands fewer nodes on most instances.", "",
-          "## H2: plan cost / h*", "", "| model | plan cost (pooled CI) | optimal per seed | solved per seed | "
+          "## H2: plan cost / h*", "", "H2 (D17 §2): **small cost** if the CI upper bound is ≤ 1.05; **falsified** if "
+          "the CI lower bound is > 1.10; **neither** otherwise (not met, not falsified).", "", "| model | plan cost (pooled CI) | optimal per seed | solved per seed | "
           "H2 | overestimation rate, mean over seeds (walk / A*-expanded / successor) |", "|---|---|---|---|---|---|"]
     for g, v in models.items():
         o = v["h2"]["overestimation_rate_mean"]

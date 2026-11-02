@@ -1,6 +1,10 @@
 """Build data/derived/cves.csv and build_log.json from a pinned NVD snapshot (D11).
 
-Usage: python scripts/derive_cves.py [snapshot-date]  (default: the latest snapshot)
+Usage: python scripts/derive_cves.py [snapshot-date] [--name NAME]
+  snapshot-date: default the latest snapshot.
+  --name: output stem, default "cves" (data/derived/cves.csv + build_log.json); any other name writes
+      data/derived/NAME.csv + NAME_build_log.json. An existing output whose bytes would change is never
+      overwritten (D24 §3): a new derivation goes to a new name.
 
 Every page file's SHA-256 is checked against manifest.json before anything is
 parsed, so the table can only be built from the exact bytes the manifest
@@ -8,6 +12,7 @@ describes. The outputs are fully determined by the snapshot: rerunning gives
 byte-identical files.
 """
 
+import argparse
 import gzip
 import hashlib
 import json
@@ -30,8 +35,12 @@ PROVENANCE_NOTES = {
     ),
 }
 
+ap = argparse.ArgumentParser()
+ap.add_argument("snapshot", nargs="?")
+ap.add_argument("--name", default="cves")
+args = ap.parse_args()
 snapshots = ROOT / "data" / "raw" / "nvd"
-snap = snapshots / sys.argv[1] if len(sys.argv) > 1 else max(p for p in snapshots.iterdir() if (p / "manifest.json").exists())
+snap = snapshots / args.snapshot if args.snapshot else max(p for p in snapshots.iterdir() if (p / "manifest.json").exists())
 manifest_bytes = (snap / "manifest.json").read_bytes()
 manifest = json.loads(manifest_bytes)
 
@@ -47,7 +56,14 @@ records, counts = derive(matches)
 
 out = ROOT / "data" / "derived"
 out.mkdir(parents=True, exist_ok=True)
-write_table(records, out / "cves.csv")
+table = out / f"{args.name}.csv"
+log_path = out / ("build_log.json" if args.name == "cves" else f"{args.name}_build_log.json")
+tmp = out / f".{args.name}.csv.tmp"
+write_table(records, tmp)
+if table.exists() and table.read_bytes() != tmp.read_bytes():
+    tmp.unlink()
+    sys.exit(f"{table} exists with different contents; write the new derivation under another --name")
+tmp.replace(table)
 
 # Every outcome is listed for every family, so a 0 is an explicit zero, not an omission.
 per_family = {fam: {o: counts[fam, o] for o in OUTCOMES} for fam in sorted({f for f, _ in counts})}
@@ -61,5 +77,8 @@ log = {
     "provenance_note": PROVENANCE_NOTES.get(manifest["snapshot_date"]),
     "counts": per_family,  # family -> reason -> CVEs; "included" + one exclusion reason per (CVE, family)
 }
-(out / "build_log.json").write_text(json.dumps(log, indent=1, sort_keys=True) + "\n")
+log["table"] = table.name
+log["parser"] = "D24 §3: nested nodes visited, negated matches excluded"
+log["table_sha256"] = hashlib.sha256(table.read_bytes()).hexdigest()
+log_path.write_text(json.dumps(log, indent=1, sort_keys=True) + "\n")
 print(json.dumps(log, indent=1, sort_keys=True))

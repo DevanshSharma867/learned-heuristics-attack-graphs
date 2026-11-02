@@ -2,7 +2,8 @@ from datetime import date
 
 import pytest
 
-from ahg.cve import FAMILY_PRODUCTS, OUTCOMES, derive, nvd_primary_v3, privileges_required, score_status
+from ahg.cve import (FAMILY_PRODUCTS, OUTCOMES, derive, nvd_primary_v3, privileges_required, score_status,
+                     vulnerable_products)
 from ahg.network import SERVICE_FAMILIES
 
 
@@ -74,3 +75,34 @@ def test_pr_read_from_vector_and_cross_checked():
     bad["cvssData"]["privilegesRequired"] = "LOW"
     with pytest.raises(ValueError):
         privileges_required(bad)
+
+
+def _m(product, vulnerable=True):
+    return {"vulnerable": vulnerable, "criteria": f"cpe:2.3:a:{product}:1.0:*:*:*:*:*:*:*"}
+
+
+APP, OS = "apache:http_server", "microsoft:windows"
+
+
+@pytest.mark.parametrize("configurations, expected", [
+    # positive match at the root
+    ([{"nodes": [{"operator": "OR", "negate": False, "cpeMatch": [_m(APP)]}]}], {APP}),
+    # running-on: APP vulnerable AND OS platform (vulnerable: false); the platform is never counted
+    ([{"operator": "AND", "nodes": [{"operator": "OR", "cpeMatch": [_m(APP)]},
+                                    {"operator": "OR", "cpeMatch": [_m(OS, False)]}]}], {APP}),
+    # nested AND -> OR -> cpeMatch (AUDIT_1 D4): found at depth
+    ([{"nodes": [{"operator": "AND", "nodes": [{"operator": "OR", "cpeMatch": [_m(APP)]}]}]}], {APP}),
+    # the JSON 1.1 feed's "children" key
+    ([{"nodes": [{"operator": "AND", "children": [{"operator": "OR", "cpeMatch": [_m(APP)]}]}]}], {APP}),
+    # negated node (AUDIT_1 D1): "not APP" never makes APP vulnerable
+    ([{"nodes": [{"operator": "OR", "negate": True, "cpeMatch": [_m(APP)]}]}], set()),
+    # negated configuration
+    ([{"negate": True, "nodes": [{"operator": "OR", "cpeMatch": [_m(APP)]}]}], set()),
+    # negation inherited by a nested node, and cancelled by a second negation
+    ([{"nodes": [{"negate": True, "nodes": [{"cpeMatch": [_m(APP)]}]}]}], set()),
+    ([{"nodes": [{"negate": True, "nodes": [{"negate": True, "cpeMatch": [_m(APP)]}]}]}], {APP}),
+    # mixed: APP positive in one configuration, OS only under negation
+    ([{"nodes": [{"cpeMatch": [_m(APP)]}]}, {"nodes": [{"negate": True, "cpeMatch": [_m(OS)]}]}], {APP}),
+])
+def test_vulnerable_products_evaluates_nesting_and_negation(configurations, expected):
+    assert vulnerable_products({"configurations": configurations}, [APP, OS]) == expected

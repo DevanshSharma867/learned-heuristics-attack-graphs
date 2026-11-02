@@ -209,20 +209,39 @@ def sign_test(higher, lower):
     return min(1.0, 2 * sum(math.comb(n, i) for i in range(k + 1)) / 2 ** n) if n else None
 
 
+def cluster_bootstrap(clusters: list[list[float]], key: str, n: int = 10_000):
+    """Mean of all values, with a 95% percentile CI from resampling clusters (base networks) with replacement."""
+    import random
+    rng = random.Random(f"cluster:{key}")
+    means = sorted(statistics.fmean(v for c in rng.choices(clusters, k=len(clusters)) for v in c) for _ in range(n))
+    return statistics.fmean(v for c in clusters for v in c), means[int(0.025 * n)], means[int(0.975 * n) - 1]
+
+
 def sampling_bias_table(runs):
+    """AUDIT_1 S1 / D24 §2: inference at the base-network level. The rows of a group are not independent: one
+    (variant, seed) fixes the topology and the CVE assignment (topology.generate and assign.assign_cves are
+    keyed by family and seed only), and the group re-observes it under every D, (rho, m) and n. So the counts
+    stay as descriptions, and the test is a sign test over base networks, on each network's mean of
+    (expanded rate - walk rate); the CI resamples networks."""
     print("### Per-instance sampling bias: h < h\\* rate on A\\*-expanded vs random-walk states\n")
     print("Per reachable instance, the heuristic's h < h\\* fraction on the distinct states its own A\\* search "
-          "expanded, against the fraction on the [S]-stream walk states. Counts of instances where the expanded "
-          "rate is higher / equal / lower; exact two-sided sign test on the non-ties. Instances with no labelled "
-          "state in either set are skipped.\n")
-    print("| run | heuristic | group | higher | equal | lower | equal, both 0 | sign-test p | skipped |")
-    print("|---|---|---|---|---|---|---|---|---|")
+          "expanded, against the fraction on the [S]-stream walk states. **Descriptive:** counts of instances where "
+          "the expanded rate is higher / equal / lower. **Inferential (D24 §2):** instances sharing a base network "
+          "(variant, seed) are one cluster, since the topology and CVE assignment depend on (variant, seed) alone. "
+          "Per network, the mean of (expanded − walk) over its instances; an exact two-sided sign test over networks "
+          "on that mean; and the mean difference over instances with a 95% CI from resampling networks (10,000). "
+          "Instance-level sign-test p-values are not printed: they treat re-observations of one network as "
+          "independent (AUDIT_1 S1). Instances with no labelled state in either set are skipped.\n")
+    print("| run | heuristic | group | higher | equal | lower | equal, both 0 | networks | networks higher / lower "
+          "| network sign-test p | mean difference [cluster CI] | skipped |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name, (_, recs) in runs.items():
         for h, idx in (("lmcut", 2), ("hmax", 1)):
             groups = [("all", lambda r: True)] + [(f"D={D}", lambda r, D=D: r["D"] == D) for D in dc.LEVELS] \
                      + [("n=20, D≥2", lambda r: r["n"] == 20 and r["D"] >= 2)]
             for gname, keep in groups:
                 hi = eq = lo = zero = skip = 0
+                by_net = defaultdict(list)
                 for r in recs:
                     if r["status"] != "ok" or not keep(r):
                         continue
@@ -234,9 +253,15 @@ def sampling_bias_table(runs):
                     fe = ex[h]["lt"] / ex["n"]
                     hi, eq, lo = hi + (fe > fw), eq + (fe == fw), lo + (fe < fw)
                     zero += fe == fw == 0
-                p = sign_test(hi, lo)
-                print(f"| {name} | {h} | {gname} | {hi} | {eq} | {lo} | {zero} | "
-                      f"{'—' if p is None else ('< 1e-300' if p == 0 else f'{p:.2g}')} | {skip} |")
+                    by_net[(r["variant"], r["seed"])].append(fe - fw)
+                nets = list(by_net.values())
+                nh = sum(statistics.fmean(c) > 0 for c in nets)
+                nl = sum(statistics.fmean(c) < 0 for c in nets)
+                p = sign_test(nh, nl)
+                ci = cluster_bootstrap(nets, f"{name}:{h}:{gname}") if nets else None
+                print(f"| {name} | {h} | {gname} | {hi} | {eq} | {lo} | {zero} | {len(nets)} | {nh} / {nl} | "
+                      f"{'—' if p is None else ('< 1e-300' if p == 0 else f'{p:.2g}')} | "
+                      f"{'—' if ci is None else f'{ci[0]:+.3f} [{ci[1]:+.3f}, {ci[2]:+.3f}]'} | {skip} |")
     print()
 
 

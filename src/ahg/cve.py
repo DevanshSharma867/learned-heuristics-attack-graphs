@@ -105,20 +105,36 @@ def score_status(cve: dict) -> str:
     return "no_score"
 
 
+def _vulnerable_criteria(node: dict, negated: bool):
+    """cpeMatch criteria with vulnerable: true that are positive in the applicability statement (D24 §3).
+
+    NVD nodes combine cpeMatch entries (and, in the older JSON feeds, child nodes under "children"; the
+    API 2.0 schema allows nested "nodes") with AND/OR, and a node with negate: true means "not" its
+    contents. A vulnerable match under an odd number of negations states where the CVE does *not*
+    apply, so it never makes a product vulnerable (AUDIT_1 D1); nested nodes are visited (D4).
+    """
+    negated ^= bool(node.get("negate"))
+    for m in node.get("cpeMatch", []):
+        if m.get("vulnerable") and not negated:
+            yield m.get("criteria", "")
+    for child in [*node.get("nodes", []), *node.get("children", [])]:
+        yield from _vulnerable_criteria(child, negated)
+
+
 def vulnerable_products(cve: dict, products) -> set[str]:
-    """Products from `products` named by a cpeMatch entry with vulnerable: true.
+    """Products from `products` named by a positive cpeMatch entry with vulnerable: true, at any depth.
 
     A CPE query also returns CVEs where the product is only the platform
     (e.g. "app X running on product Y"). Those are not vulnerabilities of
-    the product, so they are not counted here.
+    the product, so they are not counted here. AND/OR operators do not change
+    which products are vulnerable: a positive vulnerable match under AND is
+    vulnerable in that combination, which is enough for family membership.
     """
     hit = set()
     for cfg in cve.get("configurations", []):
         for node in cfg.get("nodes", []):
-            for m in node.get("cpeMatch", []):
-                if m.get("vulnerable"):
-                    criteria = m.get("criteria", "")
-                    hit.update(p for p in products if f":{p}:" in criteria)
+            for criteria in _vulnerable_criteria(node, bool(cfg.get("negate"))):
+                hit.update(p for p in products if f":{p}:" in criteria)
     return hit
 
 

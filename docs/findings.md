@@ -1,6 +1,6 @@
 # Findings so far
 
-Research record as of 2026-10-22. Every number below comes from a committed run output or a
+Research record as of 2026-10-22; §7 R2/R3, §7.8, §8 and §9 updated 2026-11-02 (D24). Every number below comes from a committed run output or a
 decision entry in `docs/decisions.md` (D-numbers), and the source is cited
 next to it. Anything without a committed source is marked **not yet
 measured** or **unverified**.
@@ -106,12 +106,17 @@ distribution (D10). D12 turns a network into a task:
 - **Why it was built.** To test whether real CVSS privilege requirements
   create enough AND-structure to make the tasks harder than D12's.
 
-## 3. Central finding: classical admissible heuristics are near-optimal
+## 3. Central finding: classical admissible A\* search is near plan length
 
-On these CVSS-grounded attack graphs, h_max and LM-cut are almost exactly
-h\*. A\* with either heuristic expands about as many nodes as the optimal
-plan has steps, which leaves little search effort for a learned heuristic
-to save.
+On these CVSS-grounded attack graphs, A\* with h_max or LM-cut expands about
+as many nodes as the optimal plan has steps. That leaves little search effort
+for a learned heuristic to save.
+
+**Wording (D24 §7).** "Near-exact" in this document means *search effort*
+near plan length (median R ≈ 1). It does not mean h = h\* pointwise. The heuristics
+have large state-wise gaps on many states A\* expands (§7.3), and their
+exactness depends on which states are counted (§7.8): on val, LM-cut is exact
+at 73% of initial states and h_max at 26%.
 
 ### 3.1 Baseline, without PR gating (D12)
 
@@ -288,7 +293,7 @@ Diagnostics that would test this, both **NOT YET RUN**:
 3. **Exactness over A\*-expanded states vs sampled states**: measured on
    the D15 sweep grid only (§7.3). It is **not yet measured** on the [S]/[L]
    PR-gated instances.
-4. **Sensitivity to the CVSS cost model**, e.g. whether the near-exactness
+4. **Sensitivity to the CVSS cost model**, e.g. whether near-plan-length search
    survives other monotone maps from E to cost, or uniform costs. This is
    **not yet measured**. Rule 5 freezes the cost model for the main
    experiments, so this would be a sensitivity analysis only.
@@ -340,10 +345,20 @@ runs' own `report.md`.
 - **R1, no hard regime: holds.** 0 of 187 eligible cells meet D15 §6
   part 1. The highest eligible median R is 1.89 (flat n=20 D=3 ρ=1.0 m=all).
   The pooled median R is 1.00 in every (D, n) row.
-- **R2, h_max sampling bias at n=20, D≥2: holds.** 782 higher / 3 equal /
-  101 lower, p = 3.4e-131.
-- **R3, LM-cut sampling bias at n=20, D≥2: holds.** 295 higher / 410 equal /
-  181 lower, p = 2.0e-7.
+- **R2, h_max sampling bias at n=20, D≥2: holds.**
+  - Instances (descriptive): 782 higher / 3 equal / 101 lower.
+  - Inference over the 78 base (variant, seed) networks (D24 §2): 78 higher / 0 lower, network sign
+    test p = 6.6e-24. Mean (expanded − walk) h < h\* rate +0.354, 95% CI [+0.321, +0.387], from
+    resampling networks.
+- **R3, LM-cut sampling bias at n=20, D≥2: holds.**
+  - Instances (descriptive): 295 higher / 410 equal / 181 lower.
+  - Over networks: 61 higher / 7 lower, p = 7.4e-12. Mean difference +0.100 [+0.080, +0.121].
+- **Why networks, not instances.** The instance counts re-observe each base network under up to 14
+  knob settings. The topology and the CVE assignment depend on (variant, seed) alone, so instances
+  are not independent replicates.
+  - The earlier instance-level sign-test p-values treated them as independent and are withdrawn
+    (AUDIT_1 S1).
+  - Clustering by seed alone (20 clusters) leaves 20 / 0 for both heuristics, p = 1.9e-6.
 - Printed by `scripts/summarize_depth_coupling.py [F16] [F16r]`.
 
 ### 7.1 Criterion (D15 §6): not met in either run
@@ -363,7 +378,8 @@ runs' own `report.md`.
 - **No fresh-seed confirmation.** No cell meets part 1, so none was run;
   seeds 100–119 are unused.
 - **Consequence under D15 §6.** Within this generator and these knob
-  ranges, classical admissible A\* is near-exact, and H1 as stated has no
+  ranges, classical admissible A\* search is near plan length (not h = h\*
+  pointwise; §7.3, §7.8), and H1 as stated has no
   room to show an effect on these graphs.
   - The knob ranges are not widened post hoc.
   - Framing and any revision of the hypotheses are left to a separate
@@ -593,7 +609,7 @@ A\* search time from the initial state, heuristic computation included.
 
 ### 7.7 The §4 working explanation: partly supported
 
-§4 explains near-exactness by short optimal plans plus shallow,
+§4 explains near-plan-length search by short optimal plans plus shallow,
 non-interacting prerequisites.
 
 - **Not supported as a cause of near-plan-length search.**
@@ -617,3 +633,80 @@ non-interacting prerequisites.
 The plan-length and chain-length medians, reachability counts, R ≥ 2 and
 R ≥ 5 counts, budget hits and outlier details cited in §7 are printed in the
 script's last section, "Instance-level facts cited in findings.md".
+
+### 7.8 Exactness by state population (D24 §7)
+
+**Source:** `results/landscape/exactness/val/2026-11-02T061753Z-b09e57a/`, the val label batch, made by
+`scripts/measure_exactness.py`. "Exact" means h = h\*; gaps are in effort units. AUDIT_2 showed that a
+single pooled rate misleads, so each population is reported on its own.
+
+| population | h_max exact | LM-cut exact | h_max mean / max gap | LM-cut mean / max gap |
+|---|---|---|---|---|
+| initial states (82 instances) | 0.256 | 0.732 | 1.97 / 8.87 | 0.29 / 2.00 |
+| all reachable non-goal states, state-weighted (46 instances ≤ 20k states; 47,296 states) | 0.895 | 0.997 | 0.17 / 9.87 | 0.00 / 2.00 |
+| same, instance-weighted (mean of per-instance rates) | 0.836 | 0.989 | — | — |
+| label states, all sources (12,402) | 0.652 | 0.939 | 0.62 / 9.87 | 0.06 / 2.00 |
+| label states expanded by A\*+h_max (1,432) | 0.216 | 0.806 | 2.04 / 9.87 | 0.20 / 2.00 |
+
+- **The initial state is where the heuristics are least exact.** The all-states rate is dominated by states
+  late in an attack, where most prerequisites are already held. This matches AUDIT_2's independent sample:
+  initial states 16% / 87% exact, reachable states 93% / 99.8%.
+- **The all-reachable row covers only the smaller instances** (46 of 82 at the 20k cap).
+- **Neither heuristic overestimated anywhere.** The script asserts it.
+- **This does not contradict §3.** Search effort stays near plan length even where values are inexact
+  (§7.3: "exactness does not equal effort").
+
+## 8. Reproducibility of CPU training (D23 amendment 1, D24)
+
+- **Finding.** Multi-threaded CPU training of the GNNs is not bitwise reproducible under machine load.
+  At 1 torch thread it is reproducible, quiet or loaded (experiment log, 2026-10-31).
+  - The cause is that multi-threaded kernels sum in a load-dependent order.
+  - The D23 gate's copy pairs (`d23t1/` against `d23t1-check/`, 1 thread each) are bitwise identical.
+  - Neither D23 seed-0 model reproduces its D22 run (4 threads) bitwise.
+  - Code, config and data were unchanged; only the thread count differed.
+- **Size of the effect.** Floating-point summation order alone moved B's val expansion ratio vs h_max from
+  0.837 (D22) to 0.786 (D23 seed 0). That shift of 0.05 is about the half-width of a val CI.
+- **Consequence.** The D22 single-seed numbers are selection diagnostics only. The paper reports the
+  multi-seed D23 results.
+- **The D22 ordering of variants holds across seeds**, on val expansions vs h_max, mean ± sd over seeds
+  (`results/analysis/d24-val/2026-11-02T061621Z-c7cbb22/`). It falls into three tiers separated by
+  gaps of at least 0.2:
+  - **ranking-trained:** A (residual) 0.590 ± 0.002 (5 seeds); c (no residual) 0.593 ± 0.007 (3 seeds);
+  - **residual MSE:** B 0.788 ± 0.024 (5 seeds);
+  - **everything else, ≥ 1.0:** max(h_max, GNN-MSE) 1.015 ± 0.057; GNN-MSE 1.162 ± 0.095; asym 1.413 ±
+    0.123; MLP 2.891 ± 0.050; WL 3.166 ± 0.000.
+
+  Within the ranking tier, A and c are not separated.
+- **These are val numbers on models selected on val.** Claims rest on the test splits (D23 §7).
+
+## 9. Limitations and threats to validity (D24 §8)
+
+- **Every modelled service is vulnerable.** `assign_cves` gives every service exactly one CVE, and
+  `build_task` turns every reach edge into an exploit (AUDIT_1 G1).
+  - There are no patched, unaffected or CVE-free services.
+  - Together with the connectivity repair, this means every host is reachable and every base task is
+    solvable.
+  - Reachability and exploitability are not separated.
+- **CVE assignment is family-level** (AUDIT_1 D3). A service has a family (e.g. `sql`), not a product
+  or version.
+  - It draws any CVE of that family, so a `sql` service can receive a PostgreSQL, MySQL, MariaDB or SQL
+    Server CVE.
+  - Costs and features are realistic per CVE. The pairing of CVE and service is a synthetic proxy, not
+    vulnerability applicability.
+- **The default D12 graphs are close to weighted shortest-path problems** (AUDIT_1 G2, AUDIT_2 §3.1).
+  - Exploits have one precondition; only logins are conjunctive, and optimal plans rarely use them.
+  - The learning splits use the D16 depth and coupling knobs (D19) to add conjunctive structure. Even
+    there, LM-cut stays near plan length (§7, §7.8).
+- **All data are synthetic.** Topologies come from three parametric families, and the hub-and-spoke default
+  is a single-hub star.
+  - The tasks are delete-free, with one goal and binary per-host facts.
+  - Patching, revocation, credential expiry and defender actions are not modelled.
+  - The CVSS-to-cost map is an effort proxy, not a calibrated probability (rule 5).
+- **The D23 amendment-2 gate criterion is post hoc.** The seed-0 gate's criterion (b) was changed from
+  "estimate inside D22's CI" to "CIs overlap" after B failed the original rule (one of 82 val plans not
+  optimal; D22's CI was the single point 1.000). Both outcomes are reported. The change concerns val
+  agreement with a non-reproducible run, and no test split had been read, but it weakens the
+  pre-registration claim for the gate.
+- **The CVE parser fix changed nothing on this snapshot** (D24 §3), because the snapshot has no nested or
+  negated nodes. The raw NVD snapshot is not in the repository (`data/` is ignored; AUDIT_1 D2). Only its
+  manifest hash is recorded.

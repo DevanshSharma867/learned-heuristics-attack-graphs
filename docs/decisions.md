@@ -2405,3 +2405,202 @@ copies, is unchanged.
   1.0013] vs [1.000, 1.000], which overlap at 1.000.
 
 The gate was re-run under this rule and PASSED: `results/training/d23t1-gate/2026-10-31T113857Z-7e84126/`.
+
+**Note to amendment 2 (2026-11-02, recorded under D24; approved by the author in the 2026-10-31 session).**
+- **What the gate's identity column compares.** "Copies bitwise identical" compares the D23 run with its D23
+  copy (`d23t1/` against `d23t1-check/`). It does not compare either with D22.
+- **Neither A nor B reproduces its D22 run bitwise.** The cause is the change from 4 torch threads to 1
+  (amendment 1): multi-threaded CPU kernels sum in a load-dependent order. Code, config and label data are
+  unchanged between the D22 runs and D23.
+- **D23's B is the intended model.** It is the D22 variant-a configuration, retrained at one thread. Its
+  val plan-cost CI differs from D22's only because one of 82 val plans is not optimal.
+- **The criterion change is post hoc.** Amendment 2 was written after the gate failed, and the paper
+  reports it that way (D24 §8).
+
+## 2026-11-02 — D24: Audit fixes before any test read
+
+**Status: ADOPTED, 2026-11-02.** It responds to two independent audits, committed unchanged as
+`docs/audit/AUDIT_1.md` and `docs/audit/AUDIT_2.md`. **No test split has been read for evaluation**:
+`results/test_access_log.jsonl` still holds only the five label-generation entries. Every run below
+used val or the committed landscape runs. Nothing in D23 §1–§7 changes, except where a section below
+says so.
+
+### 1. L1: the residual transform is the same in training and search
+
+- **Finding.** Model A is trained with the ranking loss on h = h_max + softplus(r) (`train.py`). Search
+  used h_max + max(0, r) (`heuristic.py`). The two maps can reverse the order of two states. AUDIT_1 gives
+  an example: h_max [10, 9.8] with r [−10, −1].
+- **Fix.** `learning/train.py: residual_h(hm, r, loss)` is now the only definition of the transform. The
+  ranking loss and `Learned` both call it.
+  - **A (loss = rank): softplus.** The ranking loss trains only the order of h_max + softplus(r), so
+    search must use that same strictly monotone map of r.
+  - **B (loss = mse): max(0, r), unchanged.** B regresses the raw r onto h\* − h_max. That target is ≥ 0
+    because h_max is admissible, so the trained estimate is r itself.
+    - Clipping r to the target's support [0, ∞) never increases its squared error.
+    - The clip is the identity wherever r ≥ 0.
+    - softplus would move every estimate upward, by log 2 at r = 0.
+  - No retraining was needed: the D23 checkpoints are unchanged. Only the search-time map changed, and
+    only for A.
+- **Tests (`tests/test_learning.py`).**
+  - The batched training score equals the one-state-at-a-time search score, and gives the same order on
+    every ranking pair. Checked on a freshly trained model of each loss.
+  - The same check on 5 real val instances with the D23 seed-0 A and B checkpoints.
+  - The AUDIT_1 counterexample.
+- **Effect on val.** Every manifest model was re-evaluated:
+  `results/evaluation/d24-val/2026-11-02T061500Z-3f6465a/` against
+  `results/evaluation/d23-val/2026-10-31T173124Z-b728e4b/`.
+  - **No search changed:** for every A and B seed, expansions and plan cost are identical on all 82
+    instances.
+  - A's h values moved by up to 0.53 effort units, on 28–817 of 15,260 labelled states depending on the
+    seed. Wherever they moved, r was small, so softplus(r) ≠ max(0, r).
+  - B's h values changed only by float32 rounding (≤ 1e-6).
+  - So the D23 val numbers stand as reported. The test read uses the fixed code.
+
+### 2. S1: sampling-bias inference by base network
+
+- **Finding.** The R2/R3 sign tests (D17 §1, findings §7) count every (variant, n, D, ρ, m, seed) row as
+  independent. But the topology and the CVE assignment depend on (variant, seed) alone, and each group
+  observes one base network under up to 14 knob settings.
+- **Fix.** `scripts/summarize_depth_coupling.py` keeps the instance counts as descriptions. The inference
+  now runs over base (variant, seed) networks:
+  - per network, the mean over its instances of (expanded-state h < h\* rate) − (walk-state rate);
+  - an exact two-sided sign test over networks on that mean;
+  - the instance-mean difference, with a 95% CI from resampling networks (10,000).
+  - Instance-level p-values are no longer printed.
+- **Result, [F16r], n = 20, D ≥ 2 (78 networks).**
+  - R2, h_max: 78 networks higher, 0 lower, p = 6.6e-24. Mean difference +0.354 [+0.321, +0.387].
+  - R3, LM-cut: 61 higher, 7 lower, p = 7.4e-12. Mean difference +0.100 [+0.080, +0.121].
+  - [F16] (75 networks): h_max 74 / 1; LM-cut 52 / 10, p = 5.7e-8.
+- **Sensitivity.** Clustering by seed alone is the most conservative choice: it covers the case where
+  variants that share a seed are correlated. It leaves 20 clusters, and in both runs all 20 are higher for
+  both heuristics. That gives p = 1.9e-6, the smallest p a 20-cluster sign test can give.
+- **Conclusion.** R2 and R3 hold. The old instance-level p-values (3.4e-131, 2.0e-7) are withdrawn from
+  findings.md.
+
+### 3. D1/D4: the NVD applicability parser
+
+- **Finding.** `vulnerable_products()` read only top-level nodes and ignored `negate`.
+- **Fix.** `cve._vulnerable_criteria` visits nested nodes, under both `nodes` and the older feeds'
+  `children`. A vulnerable match under an odd number of negations, from the configuration or any node on
+  the path, is excluded. AND/OR operators do not change which products are vulnerable: a positive match
+  under AND is vulnerable in that combination, which is enough for family membership. Tests in
+  `tests/test_cve.py` cover these fixtures:
+  - a root match;
+  - running-on;
+  - nesting under `nodes` and under `children`;
+  - a negated node;
+  - a negated configuration;
+  - inherited negation and double negation;
+  - a mixed case.
+- **Re-derivation.** The 2026-10-21 snapshot (manifest checked) was re-derived into a new file,
+  `data/derived/cves_d24.csv` (`scripts/derive_cves.py --name cves_d24`). `derive_cves.py` now refuses
+  to overwrite an existing table whose bytes would change.
+- **Result: no change.** `cves_d24.csv` is byte-identical to `cves.csv` (SHA-256 `30493b0d…e77d`), and
+  the build-log counts are identical.
+  - 0 CVEs added, 0 removed, 0 family changes.
+  - Every split's CVE pool is unchanged, so no instance in any split changes. Nothing is regenerated.
+  - The reason: the snapshot's 4,652 CVE records have 11,744 configuration nodes, none nested, and no
+    `negate: true` at configuration or node level. The bug was real but had no data to act on.
+  - The fixed parser is what any future snapshot uses.
+
+### 4. P1: dirty-tree detection counts untracked files
+
+- **Fix.** `runlog.git_dirty()` counts every tracked change and every untracked, non-ignored file outside
+  `results/`. Run outputs under `results/` are append-only and never imported. If they counted, a run
+  written before the previous one was committed would stamp itself dirty.
+  - The Slurm guards use the same rule.
+  - Provenance now records `git_dirty_rule: "D24"`.
+  - A test covers untracked code, untracked outputs and tracked changes.
+- **Runs stamped under the old rule.** Every `provenance.json` and label-batch manifest without
+  `git_dirty_rule` was stamped by `--untracked-files=no`. That is 82 stamps: 73 under `results/` and the 9
+  label batches. Their `git_dirty: false` does not exclude untracked code.
+  - **Partial retrospective check:** each stamp's entry script was tracked at its recorded commit (82 of
+    82). Untracked imported modules cannot be checked after the fact.
+  - The 9 label batches, including the test-split batches, were cross-checked at labelling time by an
+    independent UCS oracle and enumeration (D19 §3). An untracked module could not change a label
+    without failing those checks.
+- **The new rule immediately flagged two D24 outputs.**
+  - The pre-L1 statistics (`results/analysis/d23-val-preL1/2026-11-02T061057Z-f93ebc0/`) ran before
+    `scripts/analyse.py` and `src/ahg/stats.py` were committed. Both were committed unchanged in the next
+    commit, 09fbe09.
+  - The d24-val evaluation was stamped at write time, after unrelated files (`cve.py`,
+    `summarize_depth_coupling.py`) were edited during the run. It was re-run at a clean commit (§9).
+
+### 5. Minor fixes
+
+- **G3.** `make_instance` rejects `coupling` outside [0, 1], NaN included, with a ValueError (a
+  configuration error, not a knob failure).
+- **L2.** The encoding-cache file name carries `ENCODER_VERSION`, a hash of the source files that
+  compute the encodings, and the cache is written atomically. Existing caches are not reused, so the
+  next training run re-encodes. No D23 result reads the cache: evaluation encodes live.
+- **L3.** WL training checks the deadline between IRLS rounds. A ridge fit in progress is not
+  interrupted, so the budget is soft by one fit (373 s for the D23 WL) or one epoch. `scripts/train.py`
+  now says so. D23 itself used no deadline.
+- **P2.** Test access takes a closed set of purposes: `label generation` and `evaluation`. Any other
+  purpose is refused. Any label read spends the split's once-only budget, so renaming the purpose cannot
+  read a split twice. `open_batch` refuses `label generation`, because opening a batch reads labels.
+  `scripts/evaluate.py --purpose` accepts only `evaluation`.
+
+### 6. E2: the D23 comparators and statistics, implemented and run on val
+
+- **Comparators.** `src/ahg/evaluate.py` runs GBFS+h_add and weighted A\*+h_add (w = 1.5, 2) on every
+  instance, through the same `best_first_search`, with the same ties, reopening and budget.
+  - A test checks that they equal `search.gbfs` / `search.weighted_astar` on every val instance.
+  - Reports add their plan cost and coverage. Their plan cost is measured, never bounded (rule 8).
+- **Statistics.** `src/ahg/stats.py` and `scripts/analyse.py` implement D23 §2 as written:
+  - per-(instance, seed) ratios;
+  - a nested bootstrap, instances then seeds, 10,000 resamples;
+  - a two-sided Wilcoxon signed-rank test on seed-mean log expansions. Zeros are dropped, the exact null
+    is used for n ≤ 50 without ties, and the normal approximation with tie and continuity corrections
+    otherwise;
+  - Holm over the 14-test H1 family;
+  - matched-pairs rank-biserial r;
+  - the D23 verdicts.
+- **Choices D23 left open, fixed here before the test read.** Wilcoxon is two-sided, because one test
+  must serve both "beats" and "loses". Zeros are dropped and r is computed on the same nonzero pairs.
+  Ablations get CIs, no p-values.
+- **Why pure Python.** numpy and scipy are not dependencies, so nothing new is pinned. The tests check
+  the code against the scipy documentation's exact reference (Darwin's data, p = 0.041259765625), the
+  normal approximation by hand, Holm by hand, and the nested bootstrap's seed resampling.
+- **Outputs (val, diagnostic).** `results/analysis/d23-val-preL1/…`, `results/analysis/d24-val/…` and
+  the re-run under §9.
+
+### 7. Exactness of the classical heuristics by state population (AUDIT_2)
+
+- **Script.** `scripts/measure_exactness.py` refuses test batches. It reports h = h\* separately at:
+  - initial states;
+  - all reachable non-goal states, for instances with ≤ 20,000 reachable states;
+  - label states, by source.
+- **Val:** `results/landscape/exactness/val/2026-11-02T061753Z-b09e57a/`. The run at
+  `…061732Z…`, capped at 2,000 states, was a timing pilot.
+- **Results (fraction exact):**
+
+  | population | h_max | LM-cut |
+  |---|---|---|
+  | initial states (82) | 0.256 | 0.732 |
+  | all reachable, state-weighted (46 instances, 47,296 states) | 0.895 | 0.997 |
+  | all reachable, instance-weighted | 0.836 | 0.989 |
+  | label states (12,402) | 0.652 | 0.939 |
+  | label states expanded by A\*+h_max | 0.216 | 0.806 |
+
+  The all-reachable rates cover only the smaller instances.
+- **Wording (findings.md).** "Near-exact" means *search effort* near plan length (median R ≈ 1). It
+  does not mean h = h\* pointwise. Exactness is reported per population, never pooled.
+
+### 8. Limitations recorded (findings.md §9)
+
+findings.md §9 now records these limitations:
+- every modelled service is vulnerable;
+- CVE assignment is family-level;
+- the default (D12) tasks are close to weighted shortest-path problems;
+- all networks are synthetic;
+- the D23 amendment-2 gate criterion is post hoc.
+
+### 9. What the test read now requires (amends D23 §7 "implemented and tested on val")
+
+- Everything D23 §7 lists is now implemented and tested.
+- The test read runs `scripts/evaluate.py --manifest results/training/d23t1/frozen.json --purpose
+  evaluation` at a clean commit at or after this entry, then `scripts/analyse.py` on its output.
+- The manifest is unchanged: D24 retrains nothing.
+- The val evaluation was re-run at a clean commit after this entry. It must match the d24-val
+  evaluation per instance in expansions and plan cost. Experiment log, 2026-11-02.

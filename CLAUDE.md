@@ -169,18 +169,19 @@ Follow existing repo conventions where they exist; otherwise default to these.
 - Implemented: generator, classical heuristics (h0, h_max, h_add, h_sp, h_FF, LM-cut), A*/GBFS, D19 label
   pipeline with cross-checks, models (MLP, WL-linear, GNN) and losses (`src/ahg/learning/`), the D21
   harness (`src/ahg/evaluate.py`), `scripts/train.py`, `scripts/evaluate.py`.
-- Experiments run (as of 2026-10-30): C1 characterisation and its replication; labels for every split at
-  72e8821 (backup SHA-256 in the experiment log); D21 epoch timing, val hyperparameter search (11/15
-  configs in the 3 h budget), seed-0 pilot of every model × {MSE, asym}, val-pilot evaluation, cost projection;
-  D22 improvement round on val (diagnostics; residual, max(h_max, h), Chrestien ranking, residual+ranking, and
-  its 64×6 retrain).
-- D22 outcome (val, one seed, optimistic by selection): stopping rule met. Residual MSE 0.84× h_max
-  expansions with all plans optimal. Ranking variants ≈ 0.60× h_max and 0.94× LM-cut, at plan cost
-  1.04–1.09 and overestimation everywhere. Frozen by the D22 §2 rule: residual+ranking GNN 64×6.
-- Known issues: the D22 §2 rule selects on expansions alone, and its 64×6-over-64×3 choice is within noise
-  (see D22 §8); the author decides before multi-seed. WL vocabulary is ~1.9M colours (near graph-specific).
-- Next milestone: the author's decision on the frozen model, then multi-seed training (D17 seed plan) on the
-  HPC. No test split has been evaluated.
+- Experiments run (as of 2026-11-02): C1 characterisation and its replication; labels for every split at
+  72e8821; D21 search and pilots; D22 improvement round (val); **D23 multi-seed plan complete** (27/27 runs,
+  `results/training/d23t1/frozen.json`; A, B × 5 seeds, ablations × 3) with its val evaluation; **D24 audit
+  fixes** (docs/audit/): L1 transform parity (no val search changed), clustered R2/R3 (hold), CVE parser
+  (table byte-identical), P1 dirty rule, P2 closed test purposes, GBFS/wA*+h_add comparators and the D23 §2
+  statistics (`scripts/analyse.py`), exactness by state population.
+- D23 val (diagnostic, selected on val), expansions vs h_max, mean ± sd over seeds: A 0.590 ± 0.002 (plan
+  cost 1.042), B 0.788 ± 0.024 (plan cost 1.002). A ≈ every h_add search on expansions and ~10× slower; B
+  loses to them on expansions.
+- Known issues: WL vocabulary is ~1.9M colours (near graph-specific). Limitations: findings.md §9.
+- Next milestone: the one-shot test reads (D23 §7, D24 §9): `scripts/evaluate.py --manifest
+  results/training/d23t1/frozen.json --purpose evaluation` per test split at a clean commit, then
+  `scripts/analyse.py`. No test split has been evaluated.
 
 ## 9. Key references (verified in proposal)
 Hart, Nilsson, Raphael 1968 (A*); Sheyner et al. 2002 (attack graphs); Ou et al. 2005 (MulVAL); Hoffmann 2015 (simulated pentesting); Shmaryahu et al. 2018 (pentesting as contingent planning); Agostinelli et al. 2019 (DeepCubeA); Shen, Trevizan, Thiébaux 2020 (STRIPS-HGN); NVD; FIRST CVSS. Add new ones only with a verifiable link.

@@ -4,11 +4,15 @@ Targets are h* in effort units (D9 units / 38), a fixed constant rather than
 a fitted scale (D14 §5). Encodings are cached under data/cache/<content
 sha256 of the batch>/, so a batch is encoded once whatever runs read it; the
 cache key is the batch's own content hash, so a stale cache cannot be
-mistaken for a different batch.
+mistaken for a different batch. The file name also carries ENCODER_VERSION, a hash
+of the source files the encodings are computed by, so a changed encoder never
+reads an encoding an earlier one wrote (AUDIT_1 L2, D24 §5).
 """
 
 from collections import Counter
 from pathlib import Path
+
+import hashlib
 
 import torch
 
@@ -19,17 +23,24 @@ from ..search import astar
 
 ROOT = Path(__file__).resolve().parents[3]
 CACHE = ROOT / "data" / "cache"
+# The modules an encoding depends on: this one, the feature definitions, the relaxed costs and the
+# A*+LM-cut plan the ranking pairs come from.
+_ENCODER_SOURCES = ("learning/encode.py", "dataset.py", "heuristics.py", "search.py", "task.py", "cost.py")
+ENCODER_VERSION = hashlib.sha256(b"".join((ROOT / "src" / "ahg" / f).read_bytes()
+                                          for f in _ENCODER_SOURCES)).hexdigest()[:12]
 
 
 def _cached(batch: LabelBatch, kind: str, build, cache: Path | None):
     if cache is False:
         return build()
-    path = (cache or CACHE) / batch.manifest["content_sha256"] / f"{kind}.pt"
+    path = (cache or CACHE) / batch.manifest["content_sha256"] / f"{kind}-{ENCODER_VERSION}.pt"
     if path.exists():
         return torch.load(path, weights_only=False)
     out = build()
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(out, path)
+    tmp = path.with_suffix(".tmp")
+    torch.save(out, tmp)
+    tmp.replace(path)  # atomic: an interrupted write never leaves a partial cache file
     return out
 
 

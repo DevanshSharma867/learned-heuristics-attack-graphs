@@ -6,8 +6,9 @@ so this module has no per-split branches: validation and test go through the
 same code.
 
 Per instance it runs A* from the initial state with each baseline and each
-learned heuristic (same best_first_search, tie-breaking, duplicate
-detection and budget), and checks that every admissible baseline returns the
+learned heuristic, and the D23 §2 h_add searches (GBFS+h_add, weighted A*+h_add
+at w = 1.5 and 2), all with the same best_first_search, tie-breaking, duplicate
+detection, reopening and budget, and checks that every admissible baseline returns the
 label h*(init). Per learned model it also evaluates h_θ on the instance's
 labelled states, for overestimation statistics by source, and the sibling-ordering
 accuracy (D22 §3.2) on the labelled successors of labelled A*-expanded states.
@@ -22,10 +23,15 @@ from itertools import combinations
 from .cost import SCALE
 from .heuristics import ADMISSIBLE, INF, h0, hadd, hmax, hsp, lmcut
 from .measure import HardFailure
-from .search import astar
+from .search import best_first_search
 from .task import plan_cost
 
-BASELINES = {"h0": h0, "hmax": hmax, "hsp": hsp, "hadd": hadd, "lmcut": lmcut}
+BASELINES = {"h0": h0, "hmax": hmax, "hsp": hsp, "hadd": hadd, "lmcut": lmcut}  # each in A*
+# D23 §2: h_add in the other best-first searches, f = w_g*g + w_h*h (search.py): GBFS and weighted A*.
+HADD_SEARCHES = {"gbfs_hadd": {"w_g": 0.0, "w_h": 1.0}, "wastar1.5_hadd": {"w_g": 1.0, "w_h": 1.5},
+                 "wastar2_hadd": {"w_g": 1.0, "w_h": 2.0}}
+COMPARATORS = (*BASELINES, *HADD_SEARCHES)
+INADMISSIBLE_SEARCHES = ("hadd", *HADD_SEARCHES)  # plan cost measured, never bounded (rule 8)
 STATE_GROUPS = {"walk": {"walk"}, "astar_expanded": {"expanded_lmcut", "expanded_hmax"}, "successor": {"successor"}}
 BOOTSTRAP = 10_000
 
@@ -68,8 +74,8 @@ def sibling_order(groups, h: dict) -> dict:
     return {"pairs": pairs, "concordant": concordant, "ties": ties}
 
 
-def _run(task, h, budget):
-    r = astar(task, h, max_expansions=budget)
+def _run(task, h, budget, w_g=1.0, w_h=1.0):
+    r = best_first_search(task, h, w_g=w_g, w_h=w_h, max_expansions=budget)
     if r.solved:
         assert plan_cost(task, r.plan) == r.cost  # the plan is executable and its cost is what search says
     return {"expanded": r.expanded, "generated": r.generated, "evaluations": r.evaluations,
@@ -96,6 +102,8 @@ def evaluate(batches, learned: list, budget: int = 200_000) -> list[dict]:
                 got = rec["runs"][name]["cost"]
                 if name in ADMISSIBLE and not rec["runs"][name]["budget_hit"] and got != hstar:
                     raise HardFailure(f"seed {rec['seed']}: A*+{name} cost {got} != label h* {hstar}")
+            for name, w in HADD_SEARCHES.items():
+                rec["runs"][name] = _run(task, hadd, budget, **w)
             exs = by_inst[i]
             groups = sibling_groups(task, exs)
             for model in learned:
@@ -120,14 +128,32 @@ def _geo_ci(logs: list[float], key: str):
     return [math.exp(sum(logs) / n), math.exp(means[int(0.025 * BOOTSTRAP)]), math.exp(means[int(0.975 * BOOTSTRAP) - 1])]
 
 
-def summarise(records: list[dict], models: list[str], budget: int) -> dict:
-    """Per model: expansion and time ratios against every baseline, plan-cost ratio, overestimation by group."""
+def comparators(records: list[dict]) -> list[str]:
+    """The comparators every record ran (runs before D24 have no h_add searches)."""
+    return [c for c in COMPARATORS if all(c in r["runs"] for r in records)]
+
+
+def summarise_searches(records: list[dict]) -> dict:
+    """Plan cost and coverage of each inadmissible classical search (A*+h_add and the HADD_SEARCHES)."""
     out = {}
+    for m in [c for c in INADMISSIBLE_SEARCHES if c in comparators(records)]:
+        solved = [r for r in records if r["runs"][m]["cost"] is not None]
+        out[m] = {"instances": len(records), "solved": len(solved),
+                  "budget_hits": sum(r["runs"][m]["budget_hit"] for r in records),
+                  "optimal": sum(r["runs"][m]["cost"] == r["hstar"] for r in solved),
+                  "plan_cost": _geo_ci([math.log(r["runs"][m]["cost"] / r["hstar"]) for r in solved], f"{m}:cost")}
+    return out
+
+
+def summarise(records: list[dict], models: list[str], budget: int) -> dict:
+    """Per model: expansion and time ratios against every comparator, plan-cost ratio, overestimation by group."""
+    out = {}
+    comps = comparators(records)
     for m in models:
         s = {"instances": len(records), "budget_hits": sum(r["runs"][m]["budget_hit"] for r in records),
              "vs": {}}
         exp = lambda r, h: max(1, r["runs"][h]["expanded"] if not r["runs"][h]["budget_hit"] else budget)
-        for b in BASELINES:
+        for b in comps:
             s["vs"][b] = {
                 "expansions": _geo_ci([math.log(exp(r, m) / exp(r, b)) for r in records], f"{m}:{b}:exp"),
                 "time": _geo_ci([math.log(r["runs"][m]["seconds"] / r["runs"][b]["seconds"]) for r in records],

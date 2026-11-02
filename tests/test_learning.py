@@ -8,7 +8,8 @@ import torch
 
 from ahg.cost import SCALE
 from ahg.dataset import fact_features, open_batch, static_graph
-from ahg.evaluate import BASELINES, _geo_ci, evaluate, sibling_groups, sibling_order, summarise
+from ahg.evaluate import BASELINES, COMPARATORS, _geo_ci, evaluate, sibling_groups, sibling_order, summarise, \
+    summarise_searches
 from ahg.heuristics import ADMISSIBLE, hmax, lmcut
 from ahg.labels import write_batch
 from ahg.learning import encode
@@ -17,7 +18,8 @@ from ahg.learning.heuristic import Learned
 from ahg.learning.models import fit_ridge
 from ahg.learning.runs import make_config
 from ahg.learning.train import load, loss_fn, save, train_model
-from ahg.search import astar
+from ahg.search import astar, gbfs, weighted_astar
+from ahg.heuristics import hadd
 from test_labels import CFG
 
 
@@ -106,8 +108,24 @@ def test_harness_checks_baselines_and_summarises(batches):
         assert r["runs"]["mlp"]["cost"] >= r["hstar"]  # any plan costs at least the optimum
         assert sum(map(len, r["over"]["mlp"].values())) > 0
     s = summarise(recs, ["mlp"], 200_000)["mlp"]
-    assert set(s["vs"]) == set(BASELINES) and s["solved"] == len(recs)
+    assert set(s["vs"]) == set(COMPARATORS) and s["solved"] == len(recs)
     assert s["plan_cost"][0] >= 1.0
+    srch = summarise_searches(recs)
+    assert set(srch) == {"hadd", "gbfs_hadd", "wastar1.5_hadd", "wastar2_hadd"}
+    assert all(v["solved"] == len(recs) and v["plan_cost"][0] >= 1.0 for v in srch.values())
+
+
+def test_hadd_searches_are_the_search_module_algorithms(batches):
+    """D23 §2: the harness's GBFS and weighted-A* h_add runs are gbfs / weighted_astar themselves (same ties,
+    reopening, counting), on every val instance; their plans are executable and cost at least h*."""
+    _, val = batches
+    recs = evaluate([val], [])
+    insts = [inst for inst, rec in zip(val.instances, val.manifest["instances"]) if rec["stats"] is not None]
+    for r, inst in zip(recs, insts):
+        for name, direct in [("gbfs_hadd", gbfs(inst.task, hadd)), ("wastar1.5_hadd", weighted_astar(inst.task, hadd, 1.5)),
+                             ("wastar2_hadd", weighted_astar(inst.task, hadd, 2.0)), ("hadd", astar(inst.task, hadd))]:
+            assert (r["runs"][name]["expanded"], r["runs"][name]["cost"]) == (direct.expanded, direct.cost)
+            assert r["runs"][name]["cost"] >= r["hstar"]
 
 
 def test_bootstrap_ci_of_a_constant_is_that_constant():

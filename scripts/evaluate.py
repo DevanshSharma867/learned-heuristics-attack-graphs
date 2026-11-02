@@ -25,7 +25,7 @@ from pathlib import Path
 import torch
 
 from ahg.dataset import open_batch
-from ahg.evaluate import BASELINES, STATE_GROUPS, evaluate, summarise
+from ahg.evaluate import STATE_GROUPS, comparators, evaluate, summarise, summarise_searches
 from ahg.learning.heuristic import Learned
 from ahg.learning.train import load
 from ahg.runlog import load_raw, write_run
@@ -50,18 +50,25 @@ def order(v) -> str:
 
 def render(raw) -> str:
     s, split = raw["summary"], raw["split"]
+    comps = comparators(raw["records"])
     L = [f"# evaluation on {split} (D21 §4)", "", f"{raw['instances']} labelled instances; budget {BUDGET:,} "
-         f"expansions; torch threads {raw['torch_threads']}. Ratios are model / baseline, geometric mean "
-         "[bootstrap 95% CI over instances]; < 1 means the model expands fewer nodes or is faster.", "",
-         "## Expansions", "", "| model | " + " | ".join(BASELINES) + " |", "|---|" + "---|" * len(BASELINES)]
-    L += [f"| {m} | " + " | ".join(fmt(v["vs"][b]["expansions"]) for b in BASELINES) + " |" for m, v in s.items()]
-    L += ["", "## End-to-end time", "", "| model | " + " | ".join(BASELINES) + " |", "|---|" + "---|" * len(BASELINES)]
-    L += [f"| {m} | " + " | ".join(fmt(v["vs"][b]["time"]) for b in BASELINES) + " |" for m, v in s.items()]
+         f"expansions; torch threads {raw['torch_threads']}. Ratios are model / comparator, geometric mean "
+         "[bootstrap 95% CI over instances, one checkpoint each]; < 1 means the model expands fewer nodes or is "
+         "faster. Comparators are A* with each heuristic, then GBFS+h_add and weighted A*+h_add (D23 §2).", "",
+         "## Expansions", "", "| model | " + " | ".join(comps) + " |", "|---|" + "---|" * len(comps)]
+    L += [f"| {m} | " + " | ".join(fmt(v["vs"][b]["expansions"]) for b in comps) + " |" for m, v in s.items()]
+    L += ["", "## End-to-end time", "", "| model | " + " | ".join(comps) + " |", "|---|" + "---|" * len(comps)]
+    L += [f"| {m} | " + " | ".join(fmt(v["vs"][b]["time"]) for b in comps) + " |" for m, v in s.items()]
     L += ["", "## Plan cost and coverage", "",
           "| model | solved | budget hits | optimal | plan cost / h* | fewer / more expansions than LM-cut | "
           "sibling order acc. (tie rate, pairs) |", "|---|---|---|---|---|---|---|"]
     L += [f"| {m} | {v['solved']}/{v['instances']} | {v['budget_hits']} | {v['optimal']} | {fmt(v['plan_cost'])} | "
           f"{v['vs']['lmcut']['fewer']} / {v['vs']['lmcut']['more']} | {order(v)} |" for m, v in s.items()]
+    if raw.get("searches"):
+        L += ["", "## Inadmissible classical searches: plan cost and coverage", "",
+              "| search | solved | budget hits | optimal | plan cost / h* |", "|---|---|---|---|---|"]
+        L += [f"| {m} | {v['solved']}/{v['instances']} | {v['budget_hits']} | {v['optimal']} | {fmt(v['plan_cost'])} |"
+              for m, v in raw["searches"].items()]
     L += ["", "## Overestimation (effort units)", "", "| model | states | rate h_θ > h* | mean violation | "
           "max violation | mean abs error |", "|---|---|---|---|---|---|"]
     for m, v in s.items():
@@ -112,7 +119,8 @@ def main():
     records = evaluate(batches, learned, BUDGET)
     raw = {"split": split, "batches": [b.manifest["batch_id"] for b in batches], "models": models, "manifest": manifest,
            "instances": len(records), "torch_threads": torch.get_num_threads(), "budget": BUDGET,
-           "records": records, "summary": summarise(records, [m["name"] for m in models], BUDGET)}
+           "records": records, "summary": summarise(records, [m["name"] for m in models], BUDGET),
+           "searches": summarise_searches(records)}
     out = write_run(args.name or split, raw, render(raw), [], {"batches": raw["batches"], "models": models},
                     root=EVALUATION)
     print(out)

@@ -77,3 +77,18 @@ def test_test_access_log(tmp_path):
     entries = [json.loads(line) for line in log.read_text().splitlines()]
     assert [(e["split"], e["permitted_by"]) for e in entries] == [("test_id", None), ("test_id", "D99"),
                                                                   ("test_size", None)]
+
+
+def test_test_access_purposes_are_closed_and_every_read_spends_the_budget(tmp_path):
+    """AUDIT_1 P2: an unknown purpose is refused; label generation is free; any label read spends the once-only
+    budget, so a renamed purpose cannot read a split twice."""
+    log = tmp_path / "log.jsonl"
+    with pytest.raises(PermissionError):
+        record_test_access("b", "test_id", "diagnostic", "c", log=log)
+    record_test_access("b", "test_id", "label generation", "c", log=log)
+    record_test_access("b", "test_id", "label generation", "c", log=log)
+    record_test_access("b", "test_id", "evaluation", "c", log=log)
+    with pytest.raises(PermissionError):
+        record_test_access("b", "test_id", "evaluation", "c", log=log)
+    entries = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [e["purpose"] for e in entries] == ["label generation", "label generation", "evaluation"]

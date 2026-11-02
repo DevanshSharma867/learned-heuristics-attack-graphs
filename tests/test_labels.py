@@ -99,6 +99,6 @@ def test_reading_a_test_split_is_logged(tmp_path):
     assert gen["purpose"] == "label generation"
     with pytest.raises(PermissionError):
         open_batch(out, log=log)
-    open_batch(out, purpose="pipeline test", log=log)
+    open_batch(out, purpose="evaluation", log=log)
     entry = [json.loads(line) for line in log.read_text().splitlines()][-1]
-    assert entry["split"] == "test_id" and entry["batch_id"] == out.name and entry["purpose"] == "pipeline test"
+    assert entry["split"] == "test_id" and entry["batch_id"] == out.name and entry["purpose"] == "evaluation"

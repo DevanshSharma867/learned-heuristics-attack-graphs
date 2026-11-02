@@ -253,6 +253,8 @@ def make_instance(family: str, seed: int, n_hosts: int, pool: list[CveRecord], p
     D16 variant of the depth knob; at their defaults
     no knob rng is drawn and the Task is the one built without them.
     """
+    if not 0.0 <= coupling <= 1.0:  # a probability; NaN fails too (AUDIT_1 G3). A config error, not a knob failure.
+        raise ValueError(f"coupling must be in [0, 1], got {coupling}")
     net = generate(family, seed, n_hosts, **params)
     cves = assign_cves(net, pool, seed)
     target = choose_target(net, seed)

@@ -241,3 +241,18 @@ def test_oracle_matches_search_d16(family, n, knob_id):
             assert astar(t, HEURISTICS["hmax"], start=s).cost == hstar
             for name in ADMISSIBLE:
                 assert HEURISTICS[name](t, s) <= hstar, (name, s)
+
+
+@pytest.mark.parametrize("rho", [-0.5, 1.5, float("nan"), float("inf")])
+def test_coupling_outside_unit_interval_is_a_config_error(rho):
+    """AUDIT_1 G3: coupling is a probability; anything else is refused before generation."""
+    with pytest.raises(ValueError):
+        make_instance("flat", 0, 8, POOL, coupling=rho)
+
+
+@pytest.mark.parametrize("rho", [0.0, 1.0])
+def test_coupling_endpoints_are_accepted(rho):
+    try:
+        make_instance("flat", 0, 8, POOL, coupling=rho)
+    except UnreachableGoal:
+        pass  # rho = 1 may leave the target unreachable; that is a generation outcome, not a config error

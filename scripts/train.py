@@ -84,7 +84,7 @@ def cmd_run(args):
 
 
 def run_budgeted(configs: list[tuple[dict, dict]], deadline: float, batches, prefix: str) -> list[dict]:
-    """Train (overrides, config) pairs in order under one hard deadline; every config gets a row, failures included."""
+    """Train (overrides, config) pairs in order under one deadline, soft by one epoch / WL fit (D24 §5); every config gets a row."""
     rows = []
     for over, cfg in configs:
         row = {"kind": cfg["kind"], "overrides": over, "config": cfg}
@@ -108,7 +108,7 @@ def cmd_search(args):
     base = parse_set(args.set)
     batches = load_batches(make_config(**base))
     t0 = time.time()
-    deadline = t0 + args.budget_hours * 3600  # hard: a running config stops at its next epoch boundary
+    deadline = t0 + args.budget_hours * 3600  # a running config stops at its next epoch (WL: IRLS round) boundary; soft by one step
     configs = [(over, make_config(**{**base, "kind": kind, "loss": "mse", "seed": 0, **over}))
                for kind, overs in GRID.items() for over in overs]
     rows = run_budgeted(configs, deadline, batches, "search/")

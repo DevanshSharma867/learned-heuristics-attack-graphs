@@ -79,7 +79,7 @@ def main():
     ap.add_argument("--max-hmax", type=Path, nargs="*", default=[])
     ap.add_argument("--manifest", type=Path)
     ap.add_argument("--name")
-    ap.add_argument("--purpose")
+    ap.add_argument("--purpose", choices=["evaluation"])
     ap.add_argument("--permitted-by")
     args = ap.parse_args()
     torch.set_num_threads(1)

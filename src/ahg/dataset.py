@@ -29,7 +29,7 @@ from .cost import SCALE
 from .cve import load_table
 from .heuristics import hsp
 from .labels import CVES, FAILURES_FILE, LABELS_FILE, MANIFEST
-from .splits import SPLITS, cve_pool, record_test_access
+from .splits import LABEL_GENERATION, SPLITS, cve_pool, record_test_access
 from .task import Task, task_digest
 
 COST_SCALE = 10 * SCALE  # the largest action cost (D9), so normalised costs lie in [0.1, 1]
@@ -73,6 +73,8 @@ def open_batch(path: str | Path, purpose: str | None = None, permitted_by: str |
     manifest = json.loads((path / MANIFEST).read_text())
     split = manifest["split"]
     if SPLITS[split].is_test:
+        if purpose == LABEL_GENERATION:  # opening a batch reads its labels: only a budgeted purpose may
+            raise PermissionError("opening a test batch reads its labels; 'label generation' does not")
         record_test_access(manifest["batch_id"], split, purpose, manifest["provenance"]["git_commit"],
                            permitted_by, log)
     labels_gz, failures_gz = (path / LABELS_FILE).read_bytes(), (path / FAILURES_FILE).read_bytes()

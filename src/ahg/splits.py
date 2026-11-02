@@ -98,22 +98,27 @@ def cve_pool(pool: list[CveRecord], name: str) -> list[CveRecord]:
     raise ValueError(f"unknown CVE pool {name!r}")
 
 
+# The only reasons a test split may be touched (D24 §5, AUDIT_1 P2). A closed set: any other purpose is
+# refused. Every purpose but LABEL_GENERATION reads labels, and so spends the split's once-only budget.
+LABEL_GENERATION, EVALUATION = "label generation", "evaluation"
+TEST_PURPOSES = (LABEL_GENERATION, EVALUATION)
+
+
 def record_test_access(batch_id: str, split: str, purpose: str, commit: str,
                        permitted_by: str | None = None, log: Path | None = None) -> None:
-    """Append one read of a test split to the log, or refuse it (D17 §4, D19 §1).
+    """Append one read of a test split to the log, or refuse it (D17 §4, D19 §1, D24 §5).
 
-    purpose: why the split is read; "evaluation" is the once-only final test.
-    A second evaluation read of the same split needs permitted_by, the
-    D-entry that allows it.
+    purpose: one of TEST_PURPOSES. "label generation" writes the split's labels and reads none;
+    every other purpose is a label read, and a split gets one: a second label read, whatever its
+    purpose, needs permitted_by, the D-entry that allows it.
     """
     log = log or TEST_ACCESS_LOG
-    if not purpose:
-        raise PermissionError(f"reading test split {split} needs a stated purpose")
+    if purpose not in TEST_PURPOSES:
+        raise PermissionError(f"reading test split {split}: purpose must be one of {TEST_PURPOSES}, got {purpose!r}")
     past = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-    if purpose == "evaluation" and permitted_by is None and any(
-            e["split"] == split and e["purpose"] == "evaluation" for e in past):
-        raise PermissionError(f"test split {split} was already read for evaluation; "
-                              "a second read needs permitted_by=<D-entry>")
+    if purpose != LABEL_GENERATION and permitted_by is None and any(
+            e["split"] == split and e["purpose"] != LABEL_GENERATION for e in past):
+        raise PermissionError(f"test split {split} was already read; a second read needs permitted_by=<D-entry>")
     entry = {"date_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "batch_id": batch_id,
              "split": split, "purpose": purpose, "permitted_by": permitted_by, "git_commit": commit,
              "argv": sys.argv}

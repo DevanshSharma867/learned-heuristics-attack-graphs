@@ -32,7 +32,7 @@ fi
 cd "${SLURM_SUBMIT_DIR:?}"
 mkdir -p logs
 # A dirty tree would make the batch unreproducible from its recorded commit.
-if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+if [[ -n "$(git status --porcelain --untracked-files=no)$(git status --porcelain --untracked-files=all -- . ':(exclude)results')" ]]; then  # D24 §4 (P1)
     echo "working tree is dirty; label only at a clean commit" >&2
     exit 1
 fi

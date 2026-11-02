@@ -71,3 +71,23 @@ def test_committed_pre_d18_run_still_loads():
     run = runlog.ROOT / "results/landscape/landscape_small_n/2026-10-22T114620Z-4f00c1b"
     assert (run / "raw.json").exists() and not (run / "raw.json.gz").exists()
     assert len(runlog.load_raw(run)["instances"]) > 0
+
+
+def test_git_dirty_counts_untracked_code_but_not_run_outputs(tmp_path):
+    """AUDIT_1 P1: an untracked module marks the tree dirty; an untracked run output under results/ does not."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", *a], cwd=tmp_path, check=True, capture_output=True)
+    git("init", "-q")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+    (tmp_path / "tracked.py").write_text("x = 1\n")
+    git("add", "tracked.py")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "t")
+    assert not runlog.git_dirty(tmp_path)
+    (tmp_path / "results" / "run").mkdir(parents=True)
+    (tmp_path / "results" / "run" / "raw.json").write_text("{}")
+    assert not runlog.git_dirty(tmp_path)
+    (tmp_path / "new_module.py").write_text("y = 2\n")
+    assert runlog.git_dirty(tmp_path)
+    (tmp_path / "new_module.py").unlink()
+    (tmp_path / "tracked.py").write_text("x = 2\n")
+    assert runlog.git_dirty(tmp_path)

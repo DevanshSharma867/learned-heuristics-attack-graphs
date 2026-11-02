@@ -24,8 +24,20 @@ LANDSCAPE = ROOT / "results" / "landscape"
 RAW_GZ, RAW_JSON = "raw.json.gz", "raw.json"
 
 
-def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+def _git(*args: str, cwd: Path = ROOT) -> str:
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def git_dirty(cwd: Path = ROOT) -> bool:
+    """True if the code a run executes may differ from HEAD (AUDIT_1 P1, D24 §4).
+
+    Counts every tracked change and every untracked, non-ignored file, so an untracked module or config
+    that a run imports marks it dirty. The one exclusion: untracked files under results/, which are run
+    outputs (append-only, rule 11) and are never imported; otherwise a run written before the previous
+    one is committed would stamp itself dirty. Before D24 untracked files were not counted at all.
+    """
+    return bool(_git("status", "--porcelain", "--untracked-files=no", cwd=cwd)
+                or _git("status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude)results", cwd=cwd))
 
 
 def hardware() -> dict:
@@ -64,7 +76,8 @@ def provenance(seeds: list[int], config: dict) -> dict:
     return {
         "date_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": _git("rev-parse", "HEAD"),
-        "git_dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
+        "git_dirty": git_dirty(),
+        "git_dirty_rule": "D24",  # untracked files outside results/ count (P1)
         "argv": sys.argv,
         "seeds": seeds,
         "config": config,

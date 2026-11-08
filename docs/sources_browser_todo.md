@@ -1,5 +1,20 @@
 # Browser to-do: pages an automated fetch could not read (2026-11-08, round 2)
 
+> **OBSOLETE (2026-11-08).** Replaced by the scope-first plan in D27 (`docs/decisions.md`). None of these pages
+> will be saved or read for the purposes below. This also makes obsolete the unrun **Part 2** of the
+> CVE-semantics round, which these pages were for. Part 2 was:
+> - Step 8: read the saved pages and complete the rows that cite them;
+> - Step 9: measurement fixes, a second version of `scripts/measure_cve_semantics.py` (component role per CVE,
+>   bundled third-party category, Table 1 by year, KEV/EPSS join, Table 8 with a KEV column, KEV red flags) and the
+>   retry of the failed Linux `AV:N/PR:N/UI:N` NVD count;
+> - Step 10: the protocol pilot (23 CVEs; labels CODE_EXEC/PRIV_GAIN/DATA/DOS/OTHER/CANNOT_TELL;
+>   `scripts/verify_gold_quotes.py`; `data/derived/gold/pilot_codeexec_v0.csv`);
+> - Step 11: its run, log row and commits.
+>
+> None of Part 2 was run. Under D27, the product list and its CVE questions are re-derived for the new scope
+> (`docs/proposals/product_list_v2.md`), so any pilot or measurement will be re-planned from that list. The
+> SharePoint fix that Part 2 carried was made separately (D27 step 2). The table below is kept as a record.
+
 Each of these failed for curl with its default user agent (blocked, client-rendered, redirected, or no usable
 content). None was retried with a changed user agent. Please open each in a browser and **save it as PDF** under
 `data/raw/sources/2026-11-08/` with exactly the filename given. Part 2 Step 8 reads them, hashes them and

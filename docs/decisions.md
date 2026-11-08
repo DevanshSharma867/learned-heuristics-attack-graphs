@@ -2604,3 +2604,41 @@ findings.md §9 now records these limitations:
 - The manifest is unchanged: D24 retrains nothing.
 - The val evaluation was re-run at a clean commit after this entry. It must match the d24-val
   evaluation per instance in expansions and plan cost. Experiment log, 2026-11-02.
+
+## 2026-11-08 — D25: Redirection to a revised attack model; monotonic study frozen
+
+**Status: ADOPTED, 2026-11-08** (redirection only). Decided by the author (Devansh) on 2026-11-08. **No
+code changed.**
+
+### 1. The monotonic study is frozen
+
+- The study of D1–D24 is frozen at the local annotated tag `monotonic-study-frozen`, on commit `192b7b4`.
+- At that commit:
+  - the full test suite passed, with 1750 passed and 11 skipped;
+  - `results/test_access_log.jsonl` held only the five label-generation entries of 2026-10-29 (commit
+    `72e8821`), with no `evaluation` entry on any test split.
+- Unchanged by this entry:
+  - its hypotheses H1–H3;
+  - the D23/D24 design, including the frozen manifest `results/training/d23t1/frozen.json`;
+  - the sealed test splits.
+
+### 2. Its test reads will be run later, at the tag
+
+- The author has decided to run the frozen study's one-shot test reads under D23 §7 / D24 §9, at the tag
+  `monotonic-study-frozen`, in a separate, later session.
+- They are **not** run in this entry.
+
+### 3. The revised attack model is fixed before any experiment
+
+- Its formulation and hypotheses will be fixed in later D-entries.
+- Before that, an assumption register (`docs/assumptions.md`) is written, and the author decides each item
+  in it.
+- The model is fixed before any experiment on it.
+- `docs/audit/AUDIT_3_monotonicity.md` maps where the frozen code depends on the monotonic-model
+  assumptions. It is input to the register, not a decision.
+
+### 4. A pre-registered hardness pilot precedes any learning
+
+- A hardness pilot is pre-registered and run before any learning on the revised model.
+- Every model variant tried is reported.
+- "Not hard" is a reportable outcome.

@@ -158,6 +158,7 @@ results/cve_semantics/product_coverage/2026-11-08T120925Z-a84842d/report.md §1.
 | `advisories/CVE-2015-5370__0.html` | https://www.samba.org/samba/security/CVE-2015-5370.html | 2026-11-08T12:07:13+00:00 | 200 | 6ea6351ba15ca7852dee2090621b3aa2b8d1389d864a8e92e0abefe7051d7e96 |
 | `advisories/CVE-2019-14902__0.html` | https://www.samba.org/samba/security/CVE-2019-14902.html | 2026-11-08T12:07:13+00:00 | 200 | 3069198b3e6871d2382237569e70d8579fde746d5b9a5bfddfd3ac05ca380cc0 |
 | `advisories/freerdp_ghsa_list.json` | https://api.github.com/repos/FreeRDP/FreeRDP/security-advisories?per_page=100 | 2026-11-08T12:09:55+00:00 | 200 | 4abc27cdb94d07793b02fb5bf7beff219df9f9b553ec410964378bc526ad6afc |
+| `advisories/CVE-2013-4119__0.json` | https://api.github.com/repos/FreeRDP/FreeRDP/commits/0773bb9303d24473fe1185d85a424dfe159aff53 | 2026-11-08T12:12:41+00:00 | 200 | dabc5740edaced2ab46112762f88f5d3fcdfe767da821e777a40d550d90476da |
 
 ## 4. MSRC CVRF monthly documents 2016–2023 (S8), `data/raw/sources/2026-11-08/msrc/`
 

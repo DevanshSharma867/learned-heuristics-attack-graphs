@@ -41,7 +41,8 @@ WIN_SERVICE_TAGS = {
     "Windows Active Directory", "Active Directory Domain Services", "Active Directory",
     "Role: Windows Active Directory Server", "Windows Netlogon", "Windows TCP/IP",
 }  # fmt: skip
-WIN_CLIENT_TAGS_RE = re.compile(r"^(Internet Explorer|Microsoft Edge|Microsoft Office|Microsoft Scripting Engine|"
+# "Microsoft Office SharePoint*" tags are a server product, not client-side (D27 step 2).
+WIN_CLIENT_TAGS_RE = re.compile(r"^(Internet Explorer|Microsoft Edge|Microsoft Office(?! SharePoint)|Microsoft Scripting Engine|"
                                 r"Microsoft Outlook|Microsoft Word|Microsoft Excel|Remote Desktop Client|Windows RDP Client)")
 WIN_OS_TAG_RE = re.compile(r"^(Windows|Microsoft Windows|Win32k|Role: |Microsoft Graphics Component$)")  # C5: Windows components only
 # KEV (vendorProject, product) -> category, for entries outside MSRC data. Exact strings from the KEV catalog.

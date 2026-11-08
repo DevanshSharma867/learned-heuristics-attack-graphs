@@ -43,6 +43,7 @@ These protect the paper. Violating any of them invalidates results. If a request
 3. **Never fabricate or "fill in" results.** Every number in a table, plot, or text must be produced by a script in this repo from a logged run. If a run hasn't happened, write `TODO: not yet run`, never a plausible number.
 4. **Never fabricate citations.** Any reference added must be real and verifiable (DOI / arXiv / venue URL). If unsure a paper exists or says what we claim, mark it `[VERIFY]` and tell me.
 5. **The cost model is frozen** before main experiments: `c(a) = 1 + 9·(1 − x_a)`, `x_a ∈ [0,1]` = normalized CVSS exploitability sub-score. It is an attack-effort proxy, *not* a calibrated probability — never describe it otherwise. "Optimal" always means "optimal under this cost model".
+   *Applies to the superseded study (D26) only; the new formulation is pending docs/assumptions.md.*
 6. **Labels must be verified.** Exact cost-to-go labels are cross-checked against an independent uniform-cost search implementation (and exhaustive enumeration on the smallest graphs). A label-check test must pass before any training run is trusted.
 7. **Fair comparison.** All methods run on identical instances, same hardware, same expansion-counting code, same tie-breaking, same duplicate detection. GNN inference time (incl. batching/graph construction) is counted in end-to-end wall-clock. Heuristic computation time for h_max / h_add / h_sp is also counted.
 8. **Inadmissible heuristics get no optimality or bounded-suboptimality claims** (including in weighted A*). Report measured suboptimality only.
@@ -53,6 +54,8 @@ These protect the paper. Violating any of them invalidates results. If a request
 ---
 
 ## 2. Problem formulation (the source of truth)
+
+> Applies to the superseded study (D26) only; the new formulation is pending docs/assumptions.md.
 
 - **Attack graph** = fact–action graph with **conjunctive** action preconditions (AND over preconditions; OR over alternative actions achieving a fact).
 - **State** = set of privileges/facts held by the attacker. **Action** = exploit whose preconditions ⊆ state; adds its effects. **Goal** = target privilege ∈ state.
@@ -81,6 +84,8 @@ These protect the paper. Violating any of them invalidates results. If a request
 ---
 
 ## 3. Data pipeline
+
+> Applies to the superseded study (D26) only; the new formulation is pending docs/assumptions.md.
 
 synthetic topology → service/CVE assignment → attack-graph generator (MulVAL or native) → fact–action graph → state sampler → (labels via exact solver) → train / evaluate.
 

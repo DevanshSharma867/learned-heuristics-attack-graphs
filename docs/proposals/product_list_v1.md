@@ -3,7 +3,7 @@
 **Status: proposal, 2026-11-08. Nothing here is adopted.** No exclusion, filter or criterion follows from this
 file; it only records where real-world implementations of each service are filed in NVD and how many CVEs a
 wider product list would touch. Every number is produced by
-`scripts/measure_product_coverage.py` → `results/cve_semantics/product_coverage/2026-11-08T120925Z-a84842d/`
+`scripts/measure_product_coverage.py` → `results/cve_semantics/product_coverage/2026-11-08T150807Z-f03802d/`
 (R below), from stored inputs listed in `docs/sources.md` §3–4. No NVD snapshot was fetched: NVD numbers are
 count-only queries (`totalResults`), logged with query string and time in R §1.
 
@@ -12,6 +12,13 @@ of standalone server products. The Windows implementations of SMB, RDP, DNS, HTT
 services are, as far as the test cases show, filed under Windows OS CPEs (`o:microsoft:windows_*`) or a
 separate Microsoft application CPE, so the frozen study's families never contain them. CVE-2017-0144 (EternalBlue)
 and CVE-2019-0708 (BlueKeep) are both absent from the 2026-10-21 snapshot (R §4).
+
+**Correction (2026-11-08, D27 step 2).** The first version's C6 rule used the tag prefix `Microsoft Office`, which also
+matched `Microsoft Office SharePoint` tags. SharePoint is a server product, so it is not client-side. The rule
+now excludes it (`Microsoft Office(?! SharePoint)`). The counts in §4 come from the rerun
+`results/cve_semantics/product_coverage/2026-11-08T150807Z-f03802d/` (the first run, `…T120925Z-a84842d`, is kept
+unchanged). Changes: MSRC C6 2,586 → 2,346 (RCE 1,045 → 977); KEV in the proposed list 466 → 463 (C6 195 → 192);
+OUT Microsoft (other tag) 54 → 57. No other count changed.
 
 ## 1. Coverage audit: where each service's real-world implementation is filed
 
@@ -62,7 +69,7 @@ all-time (not 2016–2023) and overlap across CPEs.
 | C3 | Linux in-kernel network services | `o:linux:linux_kernel` | **no sourced per-CVE rule** (no component field in NVD; kernel CNA use of `programFiles` UNVERIFIED). Undecided between C3 and C5 | S3, S12, S13 |
 | C4 | edge devices | the 12 CPEs in §1 | the whole product is a network-facing device; no component rule | R §1 |
 | C5 | OS local privilege escalation | Windows OS CPEs; `o:linux:linux_kernel` | Windows: MSRC Threat Type 0 (Impact) = "Elevation of Privilege" and a Tag matching `^(Windows|Microsoft Windows|Win32k|Role: |Microsoft Graphics Component$)`, not C2/C6. Linux: none (see C3) | S8, S9 |
-| C6 | client-side software reachable by phishing | the browser, office, mail-client and PDF CPEs in §1 | Microsoft: MSRC Tag matching `^(Internet Explorer|Microsoft Edge|Microsoft Office|Microsoft Scripting Engine|Microsoft Outlook|Microsoft Word|Microsoft Excel|Remote Desktop Client|Windows RDP Client)`; others: the product | S8 |
+| C6 | client-side software reachable by phishing | the browser, office, mail-client and PDF CPEs in §1 | Microsoft: MSRC Tag matching `^(Internet Explorer|Microsoft Edge|Microsoft Office(?! SharePoint)|Microsoft Scripting Engine|Microsoft Outlook|Microsoft Word|Microsoft Excel|Remote Desktop Client|Windows RDP Client)`; others: the product | S8 |
 
 ## 3. KEV mapping rule (used for the coverage counts)
 
@@ -75,12 +82,12 @@ tag)"; (3) the KEV (vendorProject, product) pair is in the explicit table in `sc
 ## 4. Counts (R; proposal only)
 
 - **MSRC 2016–2023:** 11,228 distinct CVEs. C2 305 (129 with impact Remote Code Execution); C5 (Windows) 1,515;
-  C6 (Microsoft client-side) 2,586 (1,045 RCE).
+  C6 (Microsoft client-side) 2,346 (977 RCE). (Before the SharePoint fix: 2,586 (1,045 RCE).)
 - **NVD (all-time, overlapping):** see §1 and R §1.
 - **KEV (catalogVersion 2026.11.06, 1,769 entries):**
   - in current FAMILY_PRODUCTS (snapshot, positive vulnerable match, any year) 55; in the 1,473 included CVEs 21;
-  - in the proposed list C1–C6: **466**, by category: C6 195, C5 87, C4 84, C1 55, C3/C5 Linux kernel 32, C2 13;
-  - OUT 1,120; OUT Microsoft (other tag) 54; UNRESOLVED Microsoft (outside 2016–2023 MSRC data) 129.
+  - in the proposed list C1–C6: **463**, by category: C6 192, C5 87, C4 84, C1 55, C3/C5 Linux kernel 32, C2 13;
+  - OUT 1,120; OUT Microsoft (other tag) 57; UNRESOLVED Microsoft (outside 2016–2023 MSRC data) 129.
 - **Top 20 KEV vendor:product pairs:** R §3b (also in the session report).
 
 ## 5. Test cases (R §4)

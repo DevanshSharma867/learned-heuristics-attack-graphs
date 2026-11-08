@@ -13,7 +13,7 @@ Writes results/cve_semantics/product_coverage/<stamp>-<commit>/ through ahg.runl
 recorded in raw.json.gz.
 
 MSRC CVRF JSON uses numeric types. Their names come from MSRC's own XML rendering of the same document
-(cvrf_2017-Mar.xml): Note Type 7 = "Tag", Threat Type 0 = "Impact" (docs/sources.md S11).
+(cvrf_2017-Mar.xml): Note Type 7 = "Tag", Threat Type 0 = "Impact" (docs/sources.md S9).
 """
 
 import csv

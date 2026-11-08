@@ -14,7 +14,9 @@ Treat the repo as a research artifact, not a coursework submission — code, exp
 
 If the paper and the course ever pull apart, the paper standard wins. Any course requirement it would drop is named in `docs/decisions.md`.
 
-**Paper framing (D17, adopted 2026-10-29).** Working title: *"Learned heuristics for attack-graph planning: what they can and cannot buy"*.
+**Status (2026-11-08, D25/D26).** The monotonic study below (D1–D24, tag `monotonic-study-frozen`) is frozen (D25) and **superseded (D26)**. It was measured on wrong CVE semantics, so its val, C1 and learning numbers are not results, and its test splits are never read. The project is being redirected to a revised attack model (D25, D26 §4). The framing, hypotheses and formulation in §0 and §2 describe the superseded study until new D-entries replace them.
+
+**Paper framing (D17, adopted 2026-10-29; superseded by D26).** Working title: *"Learned heuristics for attack-graph planning: what they can and cannot buy"*.
 - **Contribution 2 (learning: informedness and generalisation under shift) is the headline.** It tests H1–H3 below, against the thresholds fixed in D17 §2.
 - **Contribution 1 (characterisation) is the motivating study.** It covers near-exact classical A\* on these graphs, h\* = h+ (delete-free), and the walk-vs-A\* sampling bias.
 - **The timing result against Fast Downward is a pre-registered negative.** It is reported prominently, not buried.
@@ -175,13 +177,14 @@ Follow existing repo conventions where they exist; otherwise default to these.
   fixes** (docs/audit/): L1 transform parity (no val search changed), clustered R2/R3 (hold), CVE parser
   (table byte-identical), P1 dirty rule, P2 closed test purposes, GBFS/wA*+h_add comparators and the D23 §2
   statistics (`scripts/analyse.py`), exactness by state population.
-- D23 val (diagnostic, selected on val), expansions vs h_max, mean ± sd over seeds: A 0.590 ± 0.002 (plan
-  cost 1.042), B 0.788 ± 0.024 (plan cost 1.002). A ≈ every h_add search on expansions and ~10× slower; B
-  loses to them on expansions.
-- Known issues: WL vocabulary is ~1.9M colours (near graph-specific). Limitations: findings.md §9.
-- Next milestone: the one-shot test reads (D23 §7, D24 §9): `scripts/evaluate.py --manifest
-  results/training/d23t1/frozen.json --purpose evaluation` per test split at a clean commit, then
-  `scripts/analyse.py`. No test split has been evaluated.
+- **2026-11-08: the study above is frozen (D25, tag `monotonic-study-frozen` on `192b7b4`) and superseded
+  (D26).** Its val, C1 and learning numbers (including the D23 val ratios formerly quoted here) were
+  measured on wrong CVE semantics and are not results; `docs/findings.md` and `docs/status_report.md` carry
+  a SUPERSEDED banner. Its five test splits are never read (access log: label-generation entries only).
+  The planned test reads (D23 §7, D24 §9, D25 §2) are cancelled.
+- Next milestone (D25, D26): the error inventory `docs/audit/AUDIT_4_errors.md` and the assumptions
+  register `docs/assumptions.md`, then the revised-model D-entries and the pre-registered hardness pilot.
+  Audits so far: `docs/audit/AUDIT_1.md`, `AUDIT_2.md`, `AUDIT_3_monotonicity.md`.
 
 ## 9. Key references (verified in proposal)
 Hart, Nilsson, Raphael 1968 (A*); Sheyner et al. 2002 (attack graphs); Ou et al. 2005 (MulVAL); Hoffmann 2015 (simulated pentesting); Shmaryahu et al. 2018 (pentesting as contingent planning); Agostinelli et al. 2019 (DeepCubeA); Shen, Trevizan, Thiébaux 2020 (STRIPS-HGN); NVD; FIRST CVSS. Add new ones only with a verifiable link.

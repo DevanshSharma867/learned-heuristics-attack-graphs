@@ -2727,3 +2727,54 @@ this study as the delete-free comparison.
   - **E1: match.** Of the 1,473 included CVEs, 160 are AV:L and 13 AV:A (1,300 AV:N).
   - **E5 count: match.** 89 of the 106 included rdp CVEs list `freerdp:freerdp`.
   - No figure needed correcting.
+
+## 2026-11-08 — D27: Scope of the new model
+
+**Status: ADOPTED, 2026-11-08.** Decided by the author (Devansh) on 2026-11-08. **No code changed.** This
+entry fixes the scope that D25 §3 and D26 §4 left open. The formulation, the assumption register
+(`docs/assumptions.md`) and the hypotheses are still to come in later entries.
+
+### 1. Scope
+
+- **Package P3** of `docs/proposals/scope_v1.md` (§6), with these options:
+  - assume breach and post-compromise movement: the attacker starts inside, on an internal host (E4, A3);
+  - network **N2**: a mixed Linux/Windows enterprise network;
+  - goal **G1**: Domain Admin.
+- **The claim, stated as scope:** "post-compromise movement in an enterprise network". Everything inside
+  this scope must be modelled completely. A step that belongs to the scope may not be left out because it is
+  hard to model. Anything left out has to be shown to be outside the scope.
+
+### 2. Headline
+
+A learned attacker-cost model inside exact Stackelberg mitigation planning, on this model.
+
+### 3. Kill criteria (applied in Phase 1, only to papers that were actually opened)
+
+- **KILL** if a paper uses a learned or ML estimate of the attacker's optimal cost to prune or order the
+  defender's search in either of these settings:
+  - Stackelberg planning or planning-based mitigation with a classical-planning attacker;
+  - AD graphs, in any exact Stackelberg or mitigation-planning setting.
+
+  If this triggers, the author chooses the pivot.
+- **NARROW** if either of these exists:
+  - learned attacker-value models for defender optimisation with non-planning attackers (for example
+    Goel et al., AD edge blocking with a GNN-approximated value);
+  - ML-for-bilevel methods that have not been applied to planning followers.
+
+  The claim is then stated relative to them.
+- **Every paper cited is re-opened in Phase 1** and recorded in `docs/sources.md` with what was read.
+
+### 4. Planned baseline
+
+- Goel, Ahmad, Moore & Guo (GNN-approximated dynamic programming for AD defence) is the planned baseline,
+  adapted to this model where possible.
+- Each adaptation, and each part that cannot be adapted, is recorded when the baseline is built.
+- The bibliographic details are `[VERIFY]` until Phase 1 opens the paper and records it in
+  `docs/sources.md`.
+
+### 5. Consequences
+
+- `docs/sources_browser_todo.md` and the unrun Part 2 of the CVE-semantics round (measurement fixes and the
+  protocol pilot) are **obsolete**. They are replaced by the scope-first plan in this entry.
+- The product list for this scope is re-derived from ATT&CK post-compromise tactics:
+  `docs/proposals/product_list_v2.md` (a proposal, not adopted).

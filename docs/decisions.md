@@ -2701,3 +2701,11 @@ amended to reference it when it exists.
 A new model whose specification addresses every AUDIT_4 error and every row of `docs/assumptions.md`
 (D25). It includes a pre-registered **monotonic ablation** (delete effects switched off), which replaces
 this study as the delete-free comparison.
+
+### Amendment 1 (2026-11-08)
+
+- **E7 is withdrawn from §2's reasons.** D9 resolved the rounding question on 2026-10-21: NVD reports E to
+  0.1 and rounds to nearest. It was therefore never an error in the study. The author's advisor listed it
+  by mistake.
+- **E5 is pending a source.** Its description of `freerdp` as a client product has no cited source yet. A
+  later amendment in this session adds one (`docs/sources.md`).

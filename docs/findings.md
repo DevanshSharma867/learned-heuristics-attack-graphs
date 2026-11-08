@@ -1,3 +1,5 @@
+> **SUPERSEDED by D26 (2026-11-08): numbers below were measured on wrong CVE semantics and are not results.**
+
 # Findings so far
 
 Research record as of 2026-10-22; §7 R2/R3, §7.8, §8 and §9 updated 2026-11-02 (D24). Every number below comes from a committed run output or a

@@ -1,3 +1,5 @@
+> **SUPERSEDED by D26 (2026-11-08): numbers below were measured on wrong CVE semantics and are not results.**
+
 # Status report: Learned Heuristics for A* over Attack Graphs
 
 - **Audit date:** 2026-10-19 (week 3 of the ~10-week plan that started the week of 5 Oct 2026)

@@ -20,6 +20,7 @@ results/raw/*
 !results/evaluation/
 # D23 §2 statistics regenerated from evaluation raw records (D24 §6).
 !results/analysis/
+!results/cve_semantics/
 # WL checkpoints are ~70 MB (1.9M-colour vocabulary); local only, SHA-256 in D21 amendment 2.
 results/training/**/wl-*/**/model.pt
 # Every read of a test split (D17 §4, D19 §1) is tracked.

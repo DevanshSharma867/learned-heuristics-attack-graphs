@@ -2642,3 +2642,62 @@ code changed.**
 - A hardness pilot is pre-registered and run before any learning on the revised model.
 - Every model variant tried is reported.
 - "Not hard" is a reportable outcome.
+
+## 2026-11-08 — D26: Frozen study superseded before any test read
+
+**Status: ADOPTED, 2026-11-08**, by the author (Devansh). **No code changed.** Supersedes D25 §2: the test
+reads planned there will not be run.
+
+### 1. Decision
+
+- The monotonic study (D1–D24, frozen at the tag `monotonic-study-frozen`, commit `192b7b4`) is superseded.
+- Its five test splits (`test_id`, `test_size`, `test_structure`, `test_vuln`, `test_vuln_cost`) are never
+  read or used, for any purpose. `results/test_access_log.jsonl` holds only the five `label generation`
+  entries of 2026-10-29 (commit `72e8821`); no test split has an `evaluation` entry.
+- Its validation results, the C1 measurements ([S], [L], F15/F16, the replication, the exactness
+  measurements) and its learning results are **not results**. They were measured on wrong CVE semantics
+  (§2) and may not be cited as findings.
+- No val preflight was run under the frozen study: there is no `results/evaluation/*preflight*` folder,
+  committed or not, as of this entry. Nothing further is superseded on that account.
+
+### 2. Reasons, with evidence
+
+- **E1. Local and adjacent CVEs used as network exploits.** Of the 1,473 CVEs in `data/derived/cves.csv`,
+  160 are `AV:LOCAL` and 13 `AV:ADJACENT_NETWORK`. There is no attack-vector filter, and every CVE becomes a
+  remote exploit from any host with reach. Evidence: `docs/audit/AUDIT_3_monotonicity.md` (§6, CVE
+  filters).
+- **E2. CVSS impact ignored; every CVE grants `execCode`.** Every exploit action adds control of the
+  destination host (`src/ahg/attack_graph.py`, exploit actions in `build_task`, add `(s.host,)`).
+  `src/ahg/cve.py:42` `CSV_FIELDS` has no confidentiality, integrity, availability or scope column, so the
+  model cannot distinguish an information-disclosure or DoS CVE from code execution.
+- **E3. Privileges Required ignored in every learning split.** `label_seed` (`src/ahg/labels.py:149-150`)
+  does not pass `pr_gated` to `make_instance`, which defaults it to `False`, and no split variant
+  (`src/ahg/splits.py:23-24`) sets it (AUDIT_2 §1.2). The `pr_gated` variant itself models PR with one
+  global `capability(user)` / `capability(admin)` pair (`src/ahg/attack_graph.py:135-136, 164-170`), not
+  per-host privileges.
+- **E4. User Interaction ignored.** No UI field is read or stored (`src/ahg/cve.py:42`); CVEs requiring
+  user interaction are exploited like any other.
+- **E5. Client-side products in server families.** 89 of the 106 `rdp` CVEs are `freerdp:freerdp` (an RDP
+  client library); the other 17 are `neutrinolabs:xrdp`. Count taken from `data/derived/cves.csv`
+  (`family == rdp`, `products` column) on 2026-11-08. They are modelled as exploits of an RDP *service*.
+- **E6. D12's MulVAL correspondence never verified.** D12 marks it
+  `[VERIFY rule names against MulVAL's interaction_rules.P before citing them in the paper]`, and no later
+  entry resolves it.
+- **E7. D9 rounding `[VERIFY]`.** Listed by the author as open. **Fact check:** D9 itself records the
+  rounding question as resolved on 2026-10-21 (NVD reports 0.1 for the floor, round to nearest), against
+  four NVD records. Kept in this list as the author stated it; it is not by itself a reason the study's
+  numbers are wrong.
+- **E8. Raw NVD snapshot not rebuildable from the repo.** `data/raw/` is gitignored (`.gitignore:6`), and
+  `scripts/fetch_nvd.py` downloads from the live NVD API, whose records change over time. A fresh fetch does
+  not reproduce the 2026-10-21 snapshot, so `cves.csv` cannot be regenerated from the repository alone.
+
+### 3. Error inventory
+
+The complete error inventory will be `docs/audit/AUDIT_4_errors.md` (not yet written). This entry will be
+amended to reference it when it exists.
+
+### 4. Replacement
+
+A new model whose specification addresses every AUDIT_4 error and every row of `docs/assumptions.md`
+(D25). It includes a pre-registered **monotonic ablation** (delete effects switched off), which replaces
+this study as the delete-free comparison.

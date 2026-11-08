@@ -2709,3 +2709,21 @@ this study as the delete-free comparison.
   by mistake.
 - **E5 is pending a source.** Its description of `freerdp` as a client product has no cited source yet. A
   later amendment in this session adds one (`docs/sources.md`).
+
+### Amendment 2 (2026-11-08)
+
+- **E5 product role, now sourced** (`docs/sources.md` row P25).
+  - The FreeRDP repository describes the project as "a free remote desktop protocol library and clients".
+  - The repository tree has `client/` front-ends and also `server/` components (`shadow`, `proxy`, `Sample`,
+    `Mac`, `Windows`). The project home page says only "a free implementation of the Remote Desktop Protocol".
+  - The sourced role is therefore **multi (library, clients and server components)**, not purely a client
+    library as §2 E5 put it.
+  - E5's point stands as a modelling fact: the rdp family treats every freerdp CVE as an exploit of an RDP
+    service. Of the 89 included freerdp CVEs, the descriptions and CPEs name client terms only in 13, server
+    terms only in 7, both in 21 and neither in 48 (keyword count, not a classification). Source:
+    `results/cve_semantics/2026-11-08T105231Z-e7d95aa/report.md` §6b.
+- **Re-verification from the raw snapshot** (same run, D26 re-verification section). The run used the
+  snapshot manifest SHA-256 `0e5a3b62…387e`, which matches `build_log.json`.
+  - **E1: match.** Of the 1,473 included CVEs, 160 are AV:L and 13 AV:A (1,300 AV:N).
+  - **E5 count: match.** 89 of the 106 included rdp CVEs list `freerdp:freerdp`.
+  - No figure needed correcting.
